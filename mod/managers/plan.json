@@ -72,7 +72,7 @@
                         "lc": 1,
                         "type": "constructor",
                         "kwargs": {
-                            "template": "Remember, ONLY respond with the task list in the correct format! E.g.:\n1. tool1_name(arg1_name=arg1_value, arg2_name=arg2_value, ...)\n2. tool2_name(arg1_name=arg1_value, arg2_name=arg2_value, ...)",
+                            "template": "Remember, ONLY respond with the task list in the correct format! E.g.:\nidx. tool(arg_name=args)",
                             "input_variables": [],
                             "template_format": "f-string"
                         }

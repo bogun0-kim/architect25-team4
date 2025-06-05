@@ -13,6 +13,7 @@ from conductor import build
 from _demo import prepare
 import agents
 
+# "1. weather_agent(What is the current temperature in Seoul?", None)"
 
 prepare()
 
@@ -21,7 +22,7 @@ prepare()
 ToolManager.set(agents.get_agent_client("mcp", {
     "name": "knoxMail_agent",
     "description": (
-        "knoxMail_agent(input: str, context: Optional[list[str]]) -> str:\n"
+        'knoxMail_agent(input="input message for knoxMail_agent", context="context for knoxMail_agent") -> str:\n'
         "- This is a unified interface to a multi-tool agent. It takes a natural language input, interprets the request, and uses internal MCP tools to execute the appropriate actions.\n"
         "- The agent is equipped with multiple tools (e.g., list unread mails, read mail, send mail, etc.) and can autonomously choose the most suitable tool for the user's intent.\n"
         " - `query` can be either a simple keyword (e.g. \"latest email\") or a natural language question "
@@ -70,7 +71,7 @@ ToolManager.set(agents.get_agent_client("mcp", {
 ToolManager.set(agents.get_agent_client("mcp", {
     "name": "weather_agent",
     "description": (
-        "weather_agent(input: str, context: Optional[list[str]]) -> str\n"
+        'weather_agent(input="input message for weather_agent", context="context for weather_agent") -> str\n'
         "- This is a unified interface to a multi-tool agent. It takes a natural language input, interprets the request, and uses internal MCP tools to execute the appropriate actions.\n"
         "- The agent is equipped with multiple tools (e.g., math, weather queries, etc.) and can autonomously choose the most suitable tool for the user's intent.\n"
         "- The `input` should be a plain English request describing what the user wants to know or compute.\n"
@@ -88,7 +89,8 @@ ToolManager.set(agents.get_agent_client("mcp", {
 
 async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
     start_time = time.time()
-    conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
+    conductor = build(LLM.get(), ToolManager.list(), PromptManager.get(LLM.name()))
+    # conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
     print(f'# Built conductor ({time.time() - start_time:.3f} seconds)')
 
     start_time = time.time()

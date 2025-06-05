@@ -2,7 +2,6 @@
 # Prompts
 ################################################################################
 
-import os
 import json
 from langchain_core.load.load import loads
 from langchain_core.prompts import ChatPromptTemplate
@@ -14,10 +13,12 @@ def load_from_json(path) -> ChatPromptTemplate:
     return loads(data)
 
 
-plan_prompt_template_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plan.json'))
-join_prompt_template_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'join.json'))
+plan_prompt_template_path = '/home/user/bogun/source/architect25-team4/managers/plan.json'
+join_prompt_template_path = '/home/user/bogun/source/architect25-team4/managers/join.json'
 _plan: ChatPromptTemplate = load_from_json(plan_prompt_template_path)
 _join: ChatPromptTemplate = load_from_json(join_prompt_template_path)
+
+_plan.pretty_print()
 
 _replan: str = \
     ' - You are given "Previous Plan" which is the plan that the previous agent created along with the execution results' \

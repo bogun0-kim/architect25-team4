@@ -6,7 +6,6 @@ from langchain_core.tools import BaseTool
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
-from managers.llm_manager import LLM
 
 
 # This function runs an async coroutine
@@ -34,6 +33,7 @@ def create_subagent_tool(
         mcp_agent,
         tool_name: str,
         tool_desc: str,
+        input_type: str,
 ) -> BaseTool:
     # Define the input schema
     class SubAgentInput(BaseModel):
@@ -43,10 +43,27 @@ def create_subagent_tool(
     # Define the tool function
     def call_agent(input: str, context: Optional[list[str]] = []) -> str:
         # You can optionally inject context if needed
-        agent_input = {"input": input}
+        # if input_type == "messages":
+        #     content = input
+        #     if context:
+        #         content = f'{content}\ncontext={context}'
+        #     agent_input = {"messages": [{"role": "user", "content": prompt}]}
+        # else:
+        #     agent_input = {"input": input}
+        #     if context:
+        #         agent_input["context"] = context  # depends on agent setup
+
+        # agent_input = {"input": input}
+        # if context:
+        #     agent_input["context"] = context  # depends on agent setup
+
+        content = input
         if context:
-            agent_input["context"] = context  # depends on agent setup
+            content = f'{content}\ncontext={context}'
+        agent_input = {"messages": [{"role": "user", "content": content}]}
+
         output = async_to_sync_safe(mcp_agent.ainvoke(agent_input))
+        print(f'# <call_agent>\n@@ input={agent_input}\n@@ output={output}\n')
         return output["output"] if isinstance(output, dict) and "output" in output else str(output)
 
     # Return as structured tool
@@ -104,7 +121,7 @@ def generate_descriptions_for_tools(tools: List[BaseTool]) -> List[str]:
     return header + "\n\n" + "\n\n".join(tool_descriptions)
 
 
-def get_agent_client(config: dict, llm=None) -> BaseTool:
+def get_agent_client(config: dict, llm, *args, **kwargs) -> BaseTool:
     name = config["name"]
     mcp_config = config["mcp"]
     client = MultiServerMCPClient({
@@ -114,7 +131,12 @@ def get_agent_client(config: dict, llm=None) -> BaseTool:
         },
     })
     tools = asyncio.run(client.get_tools())
+    print('########################### tools ')
+    for t in tools:
+        print(t.description)
+    print('########################### tools zz')
     desc = generate_descriptions_for_tools(tools)
     agent = create_react_agent(model=llm, tools=tools, prompt=desc)
+    input_type = "input,context" if "weather" in name else "messages"
     return create_subagent_tool(
-        agent, tool_name=name, tool_desc=config["description"])
+        agent, tool_name=name, tool_desc=config["description"], input_type=input_type)
