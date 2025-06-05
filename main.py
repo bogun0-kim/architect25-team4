@@ -9,12 +9,36 @@ from langchain_core.messages import HumanMessage
 from managers.llm_manager import LLM
 from managers.tool_manager import ToolManager
 from managers.prompt_manager import PromptManager
+# from clients.agent_client import get_agent_client
 from conductor import build
 from _demo import prepare
+import agents
 
 
 prepare()
+
 # conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
+config = {
+    "type": "MCP",
+    "name": "weather_agent",
+    "description": (
+        "weather_agent(input: str, context: Optional[list[str]]) -> str\n"
+        "- This is a unified interface to a multi-tool agent. It takes a natural language input, interprets the request, and uses internal MCP tools to execute the appropriate actions.\n"
+        "- The agent is equipped with multiple tools (e.g., math, weather queries, etc.) and can autonomously choose the most suitable tool for the user's intent.\n"
+        "- The `input` should be a plain English request describing what the user wants to know or compute.\n"
+        "- The `context` field is optional and can include supplemental information from previous steps or system memory to improve accuracy.\n"
+        "- The output is a final answer generated after the agent completes reasoning and tool execution.\n"
+        "- You should not assume the agent knows everything; it only knows what its tools allow it to observe or compute.\n"
+        "- Do not include multiple unrelated questions in a single input. The agent processes one task per request.\n"
+    ),
+    "mcp": {
+        "transport": "streamable_http",
+        "url": "http://localhost:8001/mcp",
+    },
+}
+
+
+ToolManager.set(agents.get_agent_client("mcp", config, LLM.get()))
 
 
 async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
@@ -50,4 +74,4 @@ async def test(request: Request):
 
 
 if __name__ == '__main__':
-    uvicorn.run(app, host='0.0.0.0', port=3000)
+    uvicorn.run(app, host='0.0.0.0', port=8000)

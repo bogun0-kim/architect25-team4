@@ -17,7 +17,7 @@ class WeatherInput(BaseModel):
 # 단일 툴 함수 정의
 # ----------------------------------
 
-def get_weather_info(location: str, func: str, context: Optional[List[str]] = None) -> int:
+def get_weather_info(location: str, func: str, context: Optional[List[str]] = []) -> int:
     if func == "temperature":
         return 23  # 섭씨
     elif func == "particular":

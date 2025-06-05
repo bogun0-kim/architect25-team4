@@ -40,7 +40,9 @@ def _resolve_arg(arg: Union[str, Any], observations: Dict[int, Any]):
         return str(observations.get(idx, match.group(0)))
 
     # For dependencies on other tasks
-    if isinstance(arg, str):
+    if arg is None:
+        return None
+    elif isinstance(arg, str):
         return re.sub(_ID_PATTERN, replace_match, arg)
     elif isinstance(arg, list):
         return [_resolve_arg(a, observations) for a in arg]

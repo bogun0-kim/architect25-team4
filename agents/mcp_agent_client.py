@@ -1,17 +1,13 @@
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.prebuilt import create_react_agent
+from typing import List, get_type_hints, Optional
+from pydantic import BaseModel, Field
 import asyncio
 import threading
-
-from pydantic import BaseModel, Field
-from typing import Optional
-from langchain_core.tools import StructuredTool
-from typing import List
-
 from langchain_core.tools import BaseTool
-from typing import List, get_type_hints, Optional
-
+from langchain_core.tools import StructuredTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
 from managers.llm_manager import LLM
+
 
 # This function runs an async coroutine
 def async_to_sync_safe(coro):
@@ -33,7 +29,12 @@ def async_to_sync_safe(coro):
         raise error
     return result
 
-def create_subagent_tool(mcp_agent, tool_name: str = "subagent", desc: str = None) -> StructuredTool:
+
+def create_subagent_tool(
+        mcp_agent,
+        tool_name: str,
+        tool_desc: str,
+) -> BaseTool:
     # Define the input schema
     class SubAgentInput(BaseModel):
         input: str = Field(..., description="The input string to process through the sub-agent")
@@ -48,24 +49,14 @@ def create_subagent_tool(mcp_agent, tool_name: str = "subagent", desc: str = Non
         output = async_to_sync_safe(mcp_agent.ainvoke(agent_input))
         return output["output"] if isinstance(output, dict) and "output" in output else str(output)
 
-    AGENT_TOOL_DESCRIPTION = (
-        "weather_agent(input: str, context: Optional[list[str]]) -> str\n"
-        "- This is a unified interface to a multi-tool agent. It takes a natural language input, interprets the request, and uses internal MCP tools to execute the appropriate actions.\n"
-        "- The agent is equipped with multiple tools (e.g., math, weather queries, etc.) and can autonomously choose the most suitable tool for the user's intent.\n"
-        "- The `input` should be a plain English request describing what the user wants to know or compute.\n"
-        "- The `context` field is optional and can include supplemental information from previous steps or system memory to improve accuracy.\n"
-        "- The output is a final answer generated after the agent completes reasoning and tool execution.\n"
-        "- You should not assume the agent knows everything; it only knows what its tools allow it to observe or compute.\n"
-        "- Do not include multiple unrelated questions in a single input. The agent processes one task per request.\n"
-    )
-
     # Return as structured tool
     return StructuredTool.from_function(
         name=tool_name,
-        description=f"{AGENT_TOOL_DESCRIPTION}",
+        description=tool_desc,
         func=call_agent,
         args_schema=SubAgentInput,
     )
+
 
 def generate_tool_description(tool: StructuredTool) -> str:
     print(f"Generating description for tool: {tool.name}")
@@ -92,6 +83,7 @@ def generate_tool_description(tool: StructuredTool) -> str:
 
     return "\n".join(lines)
 
+
 def generate_descriptions_for_tools(tools: List[BaseTool]) -> List[str]:
     header = (
         "You are an agent equipped with a set of MCP tools. Use these tools to accurately fulfill user requests.\n\n"
@@ -111,25 +103,18 @@ def generate_descriptions_for_tools(tools: List[BaseTool]) -> List[str]:
     tool_descriptions = [generate_tool_description(tool) for tool in tools]
     return header + "\n\n" + "\n\n".join(tool_descriptions)
 
-def get_weather_agent_tool() -> StructuredTool:
-    client = MultiServerMCPClient(
-        {
-            "weather": {
-                "transport": "streamable_http",
-                "url": "http://localhost:8001/mcp"
-            },
-        }
-    )
 
+def get_agent_client(config: dict, llm=None) -> BaseTool:
+    name = config["name"]
+    mcp_config = config["mcp"]
+    client = MultiServerMCPClient({
+        name: {
+            "url": mcp_config["url"],
+            "transport": mcp_config.get("transport", "streamable-http")
+        },
+    })
     tools = asyncio.run(client.get_tools())
     desc = generate_descriptions_for_tools(tools)
-
-    agent = create_react_agent(model=LLM.get(), tools=tools, prompt=desc)
-
-    # StructuredTool로 wrapping
-    weather_agent_tool = create_subagent_tool(agent, tool_name="weather_agent")
-
-    return weather_agent_tool
-
-
-
+    agent = create_react_agent(model=llm, tools=tools, prompt=desc)
+    return create_subagent_tool(
+        agent, tool_name=name, tool_desc=config["description"])
