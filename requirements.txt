@@ -4,6 +4,7 @@ fastapi
 uvicorn
 langchain_core
 langchain_openai
+langchain-google-genai
 langchain
 langgraph
 

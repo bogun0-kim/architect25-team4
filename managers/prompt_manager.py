@@ -6,6 +6,7 @@ import json
 from langchain_core.load.load import loads
 from langchain_core.prompts import ChatPromptTemplate
 
+import os
 
 def load_from_json(path) -> ChatPromptTemplate:
     with open(path, 'r', encoding='utf-8') as f:
@@ -13,8 +14,8 @@ def load_from_json(path) -> ChatPromptTemplate:
     return loads(data)
 
 
-plan_prompt_template_path = '/home/user/bogun/source/architect25-team4/managers/plan.json'
-join_prompt_template_path = '/home/user/bogun/source/architect25-team4/managers/join.json'
+plan_prompt_template_path = os.path.join(os.getcwd(), 'managers', 'plan.json')
+join_prompt_template_path = os.path.join(os.getcwd(), 'managers', 'join.json')
 _plan: ChatPromptTemplate = load_from_json(plan_prompt_template_path)
 _join: ChatPromptTemplate = load_from_json(join_prompt_template_path)
 

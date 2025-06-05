@@ -6,7 +6,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
-from managers.llm_manager import LLM
+# from managers.llm_manager import LLM
 
 
 # This function runs an async coroutine
@@ -101,10 +101,11 @@ def generate_descriptions_for_tools(tools: List[BaseTool]) -> List[str]:
         "- Always specify the units you expect when asking about weather. For example, ask 'what is the temperature in Celsius' instead of just 'what is the temperature'.\n"
     )
     tool_descriptions = [generate_tool_description(tool) for tool in tools]
+    print(f"Tool Description: {tool_descriptions}")
     return header + "\n\n" + "\n\n".join(tool_descriptions)
 
 
-def get_agent_client(config: dict, llm=None) -> BaseTool:
+async def get_agent_client(config: dict, llm=None) -> BaseTool:
     name = config["name"]
     mcp_config = config["mcp"]
     client = MultiServerMCPClient({
@@ -113,8 +114,49 @@ def get_agent_client(config: dict, llm=None) -> BaseTool:
             "transport": mcp_config.get("transport", "streamable-http")
         },
     })
-    tools = asyncio.run(client.get_tools())
+    # tools = asyncio.run(client.get_tools())
+    tools = await client.get_tools()
+
+    print(f'Agent Name: {name}')
+    for tool in tools:
+        print(f'\tTool Description: {tool.description}')
     desc = generate_descriptions_for_tools(tools)
+    print('################################')
+    print(f'Agent Description: ${desc}')
+    print('################################')
     agent = create_react_agent(model=llm, tools=tools, prompt=desc)
     return create_subagent_tool(
         agent, tool_name=name, tool_desc=config["description"])
+
+
+async def main():
+    from langchain_google_genai import ChatGoogleGenerativeAI # Changed import
+    config = {
+    "name": "weather_agent",
+    "description": (
+        "weather_agent(input: str, context: Optional[list[str]]) -> str\n"
+        "- This is a unified interface to a multi-tool agent. It takes a natural language input, interprets the request, and uses internal MCP tools to execute the appropriate actions.\n"
+        "- The agent is equipped with multiple tools (e.g., math, weather queries, etc.) and can autonomously choose the most suitable tool for the user's intent.\n"
+        "- The `input` should be a plain English request describing what the user wants to know or compute.\n"
+        "- The `context` field is optional and can include supplemental information from previous steps or system memory to improve accuracy.\n"
+        "- The output is a final answer generated after the agent completes reasoning and tool execution.\n"
+        "- You should not assume the agent knows everything; it only knows what its tools allow it to observe or compute.\n"
+        "- Do not include multiple unrelated questions in a single input. The agent processes one task per request.\n"
+    ),
+    "mcp": {
+        "transport": "streamable_http",
+        "url": "http://localhost:8001/mcp",
+        }
+    }
+
+    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0) # Changed to Gemini
+
+    tool = await get_agent_client(config, llm)
+
+    await tool.ainvoke("What's the temperature in Seoul?")
+    # print(tool.ainvoke("What's the temperature?"))
+
+    
+
+if __name__ == '__main__':
+    asyncio.run(main())
