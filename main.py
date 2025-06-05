@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
@@ -13,21 +14,30 @@ from _demo import prepare
 
 
 prepare()
-conductor = build(LLM.get(), ToolManager.list(), PromptManager.get(LLM.name()))
+# conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
 
 
 async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
+    start_time = time.time()
+    conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
+    print(f'# Built conductor ({time.time() - start_time:.3f} seconds)')
+
+    start_time = time.time()
     print('\n########## START ##########\n')
-    yield '[Processing]'
+    n_steps = 0
+    yield '<< Processing >>'
     await asyncio.sleep(0.5)
     for step in conductor.stream({"messages": [HumanMessage(content=user_message)]}):
-        print('========== <STEP> ==========')
-        print(step)
-        print('============================')
-        yield str(step).encode('utf-8')
+        n_steps += 1
+        step_name = list(step)[0]
+        messages = step[step_name]["messages"]
+        print(f'\n#### [STEP-{n_steps}-{step_name}] ####')
+        for i, msg in enumerate(messages):
+            print(f'# [message-{i}] {msg}')
+        yield str(messages).encode('utf-8')
         await asyncio.sleep(0.5)
-    yield '[Done]'
-    print('\n########## DONE ##########\n')
+    yield '<< Done >>'
+    print(f'\n########## DONE ({time.time() - start_time:.3f} seconds) ##########\n')
 
 
 app = FastAPI()

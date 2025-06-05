@@ -22,32 +22,32 @@ class State(TypedDict):
 
 def build(
         model: BaseChatModel,
-        tools: list[BaseTool],
+        tools: dict[str, BaseTool],
         prompts: dict[str, ChatPromptTemplate | str],
 ):
     planner: Runnable = build_planner(model, tools, prompts["plan"], prompts["replan"])
-    plan_and_schedule: Runnable = build_scheduler(planner)
+    plan_and_execute: Runnable = build_scheduler(planner)
     join: Runnable = build_joiner(model, prompts["join"].partial(examples=''))
 
     graph = StateGraph(State)
 
     # Define vertices
-    # We defined plan_and_schedule above already.
+    # We defined plan_and_execute above already.
     # Assign each node to a state variable to update.
-    graph.add_node("plan_and_schedule", plan_and_schedule)
-    graph.add_node("join", join)
+    planner_executor_node = "plan_and_execute"
+    joiner_node = "join"
+    graph.add_node(planner_executor_node, plan_and_execute)
+    graph.add_node(joiner_node, join)
 
     # Define edges
-    graph.add_edge("plan_and_schedule", "join")
+    graph.add_edge(planner_executor_node, joiner_node)
 
     # This condition determines looping logic
     def should_continue(state):
-        return END if isinstance(state["messages"][-1], AIMessage) else "plan_and_schedule"
+        return END if isinstance(state["messages"][-1], AIMessage) else planner_executor_node
 
-    graph.add_conditional_edges(
-        "join",
-        # Next, we pass in the function that will determine which node is called next.
-        should_continue)
+    # Next, we pass in the function that will determine which node is called next.
+    graph.add_conditional_edges(joiner_node, should_continue)
 
-    graph.add_edge(START, "plan_and_schedule")
+    graph.add_edge(START, planner_executor_node)
     return graph.compile()
