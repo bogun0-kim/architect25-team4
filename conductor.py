@@ -22,8 +22,8 @@ class State(TypedDict):
 
 def build(
         model: BaseChatModel,
-        tools: dict[str, BaseTool],
-        prompts: dict[str, ChatPromptTemplate | str],
+        tools: list[BaseTool],
+        prompts: dict[str, ChatPromptTemplate],
 ):
     planner: Runnable = build_planner(model, tools, prompts["plan"], prompts["replan"])
     plan_and_execute: Runnable = build_scheduler(planner)

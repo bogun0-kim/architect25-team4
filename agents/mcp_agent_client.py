@@ -2,6 +2,7 @@ from typing import List, get_type_hints, Optional
 from pydantic import BaseModel, Field
 import asyncio
 import threading
+from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -33,7 +34,6 @@ def create_subagent_tool(
         mcp_agent,
         tool_name: str,
         tool_desc: str,
-        input_type: str,
 ) -> BaseTool:
     # Define the input schema
     class SubAgentInput(BaseModel):
@@ -43,27 +43,13 @@ def create_subagent_tool(
     # Define the tool function
     def call_agent(input: str, context: Optional[list[str]] = []) -> str:
         # You can optionally inject context if needed
-        # if input_type == "messages":
-        #     content = input
-        #     if context:
-        #         content = f'{content}\ncontext={context}'
-        #     agent_input = {"messages": [{"role": "user", "content": prompt}]}
-        # else:
-        #     agent_input = {"input": input}
-        #     if context:
-        #         agent_input["context"] = context  # depends on agent setup
-
-        # agent_input = {"input": input}
-        # if context:
-        #     agent_input["context"] = context  # depends on agent setup
-
-        content = input
+        agent_input = {"messages": [{"role": "user", "content": input}]}
         if context:
-            content = f'{content}\ncontext={context}'
-        agent_input = {"messages": [{"role": "user", "content": content}]}
-
-        output = async_to_sync_safe(mcp_agent.ainvoke(agent_input))
-        print(f'# <call_agent>\n@@ input={agent_input}\n@@ output={output}\n')
+            config = {"configurable": {"context": context}}
+        else:
+            config = {}
+        output = async_to_sync_safe(mcp_agent.ainvoke(agent_input, config=config))
+        print(f'# <call_agent> {tool_name}\n >> input={agent_input}\n >> output={output}\n')
         return output["output"] if isinstance(output, dict) and "output" in output else str(output)
 
     # Return as structured tool
@@ -77,7 +63,7 @@ def create_subagent_tool(
 
 def generate_tool_description(tool: StructuredTool) -> str:
     print(f"Generating description for tool: {tool.name}")
-    
+
     sig = tool.args_schema if tool.args_schema else tool.func.__annotations__
     type_hints = get_type_hints(tool.func) if tool.func else get_type_hints(tool.coroutine)
     return_type = type_hints.get("return", "Unknown")
@@ -121,7 +107,7 @@ def generate_descriptions_for_tools(tools: List[BaseTool]) -> List[str]:
     return header + "\n\n" + "\n\n".join(tool_descriptions)
 
 
-def get_agent_client(config: dict, llm, *args, **kwargs) -> BaseTool:
+def get_agent_client(config: dict, llm: BaseChatModel, *args, **kwargs) -> BaseTool:
     name = config["name"]
     mcp_config = config["mcp"]
     client = MultiServerMCPClient({
@@ -131,12 +117,10 @@ def get_agent_client(config: dict, llm, *args, **kwargs) -> BaseTool:
         },
     })
     tools = asyncio.run(client.get_tools())
-    print('########################### tools ')
-    for t in tools:
-        print(t.description)
-    print('########################### tools zz')
     desc = generate_descriptions_for_tools(tools)
     agent = create_react_agent(model=llm, tools=tools, prompt=desc)
-    input_type = "input,context" if "weather" in name else "messages"
-    return create_subagent_tool(
-        agent, tool_name=name, tool_desc=config["description"], input_type=input_type)
+    print(f'# agent: {name}')
+    for n, t in enumerate(tools, 1):
+        print(f'  tool-#{n}: {t.name}, {t.description}')
+    print(f'# ==== agent desc ====\n{desc}\n========')
+    return create_subagent_tool(agent, tool_name=name, tool_desc=config["description"])
