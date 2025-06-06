@@ -39,17 +39,16 @@ def _execute_task(task, observations, config):
         return tool_to_use
     args = task["args"]
     try:
-        if isinstance(args, str):
+        if args is None:
+            resolved_args = None
+        elif isinstance(args, str):
             resolved_args = _resolve_arg(args, observations)
         elif isinstance(args, dict):
             resolved_args = {
                 key: _resolve_arg(val, observations) for key, val in args.items()
             }
-
-        # TODO: test
         elif isinstance(args, (list, tuple)):
             resolved_args = _resolve_arg(args, observations)
-
         else:
             # This will likely fail
             resolved_args = args
@@ -98,7 +97,7 @@ def _resolve_arg(arg: Union[str, Any], observations: Dict[int, Any]):
         output = None
     elif isinstance(arg, str):
         output = re.sub(_id_pattern, replace_match, arg)
-    elif isinstance(arg, list):
+    elif isinstance(arg, (list, tuple)):
         output = [_resolve_arg(a, observations) for a in arg]
     else:
         output = str(arg)
