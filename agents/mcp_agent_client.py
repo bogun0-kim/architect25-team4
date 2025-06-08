@@ -4,6 +4,7 @@ import asyncio
 import threading
 from langchain_core.tools import BaseTool
 from langchain_core.tools import StructuredTool
+from langchain_core.messages import SystemMessage, HumanMessage 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 from managers.llm_manager import LLM
@@ -33,20 +34,31 @@ def async_to_sync_safe(coro):
 def create_subagent_tool(
         mcp_agent,
         tool_name: str,
+        system_prompt: str,
         tool_desc: str,
 ) -> BaseTool:
     # Define the input schema
     class SubAgentInput(BaseModel):
-        input: str = Field(..., description="The input string to process through the sub-agent")
+        """Defines the input argument for our agent tool."""
+        input: str = Field(description="A detailed, natural language query for the agent.")
+        # input: str = Field(..., description="The input string to process through the sub-agent")
         context: Optional[list[str]] = Field(default=[], description="Optional context")
 
     # Define the tool function
     def call_agent(input: str, context: Optional[list[str]] = []) -> str:
         # You can optionally inject context if needed
-        agent_input = {"input": input}
+
+        agent_input = {
+            "messages": [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=input)
+            ]
+        }
+        # agent_input = {"input": input}
         if context:
             agent_input["context"] = context  # depends on agent setup
         output = async_to_sync_safe(mcp_agent.ainvoke(agent_input))
+        # return result['messages'][-1].content
         return output["output"] if isinstance(output, dict) and "output" in output else str(output)
 
     # Return as structured tool
@@ -117,4 +129,4 @@ def get_agent_client(config: dict, llm=None) -> BaseTool:
     desc = generate_descriptions_for_tools(tools)
     agent = create_react_agent(model=llm, tools=tools, prompt=desc)
     return create_subagent_tool(
-        agent, tool_name=name, tool_desc=config["description"])
+        agent, tool_name=name, system_prompt=desc, tool_desc=config["description"])

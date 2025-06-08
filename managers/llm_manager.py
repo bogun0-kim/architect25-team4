@@ -4,7 +4,7 @@
 
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
-
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # TODO: simple singleton instance
 _LLM: BaseChatModel
@@ -12,9 +12,12 @@ _LLM: BaseChatModel
 
 class LLM:
     @staticmethod
-    def set(*args, **kwargs):
+    def set(llm_type: str, *args, **kwargs):
         global _LLM
-        _LLM = ChatOpenAI(*args, **kwargs)
+        if llm_type == "GEMINI":
+            _LLM = ChatGoogleGenerativeAI(*args, **kwargs)
+        else:
+            _LLM = ChatOpenAI(*args, **kwargs)
 
     @staticmethod
     def get():

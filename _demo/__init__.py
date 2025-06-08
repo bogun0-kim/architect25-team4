@@ -20,14 +20,17 @@ except ImportError:
 def prepare():
     openai_api_key = os.getenv("OPENAI_API_KEY", None)
     gemini_api_key = os.getenv("GEMINI_API_KEY", None)
+    llm_type = None
     if openai_api_key is not None:
+        llm_type = 'OPENAI'
         model = os.getenv("OPENAI_MODEL", 'gpt-4.1-nano')
         api_key = openai_api_key
         base_url = None
         max_tokens = 1024
         print(f'OpenAI: {model}')
     elif gemini_api_key is not None:
-        model = os.getenv("GEMINI_MODEL", None)
+        llm_type = 'GEMINI'
+        model = os.getenv("GEMINI_MODEL", 'gemini-2.0-flash-lite')
         api_key = gemini_api_key
         base_url = None
         max_tokens = 1024
@@ -38,7 +41,7 @@ def prepare():
         base_url = 'http://34.64.195.131:80/v1'
         max_tokens = 1024
         print(f'LLM: {base_url}')
-    LLM.set(model=model, api_key=api_key, base_url=base_url, max_tokens=max_tokens)
+    LLM.set(llm_type, model=model, api_key=api_key, base_url=base_url, max_tokens=max_tokens, temperature=0)
 
     ToolManager.set(get_math_tool(LLM.get()))
     # ToolManager.set(get_search_tool())
