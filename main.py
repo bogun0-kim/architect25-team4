@@ -13,11 +13,8 @@ from conductor import build
 from _demo import prepare
 import agents
 
-# "1. weather_agent(What is the current temperature in Seoul?", None)"
 
 prepare()
-
-# conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
 
 ToolManager.set(agents.get_agent_client("mcp", {
     "name": "knoxMail_agent",
@@ -89,8 +86,7 @@ ToolManager.set(agents.get_agent_client("mcp", {
 
 async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
     start_time = time.time()
-    conductor = build(LLM.get(), ToolManager.list(), PromptManager.get(LLM.name()))
-    # conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
+    conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
     print(f'# Built conductor ({time.time() - start_time:.3f} seconds)')
 
     start_time = time.time()

@@ -13,8 +13,8 @@ def _debug_inputs(func_name, config, input_, messages):
     print(f'@@ {__file__} >> BaseChatModel.{func_name}(): config={config}')
     print(f'@@ {__file__} >> BaseChatModel.{func_name}(): input={input_}')
     print(f'@@ {__file__} >> BaseChatModel.{func_name}(): input->messages={messages}')
-    for msg in messages:
-        print(f'@@ {__file__} >> ==== input-{msg.__class__.__name__} ====\n'
+    for n, msg in enumerate(messages, 1):
+        print(f'@@ {__file__} >> ==== input[{n}/{len(messages)}]-{msg.__class__.__name__} ====\n'
               f'{msg.content}\n'
               f'================================================================================')
 

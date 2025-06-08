@@ -25,6 +25,7 @@ def prepare():
             "model": os.getenv("OPENAI_MODEL", 'gpt-4.1-nano'),
             "base_url": None,
             "max_tokens": 1024,
+            "temperature": 0.0,
         }
         print(f'OpenAI: {config["model"]}')
     elif google_api_key is not None:
@@ -34,6 +35,7 @@ def prepare():
             "model": os.getenv("GOOGLE_MODEL", 'gemini-2.0-flash'),
             "base_url": None,
             "max_tokens": 1024,
+            "temperature": 0.0,
         }
         print(f'Google: {config["model"]}')
     else:
@@ -43,6 +45,7 @@ def prepare():
             "model": '',
             "base_url": 'http://34.64.195.131:80/v1',
             "max_tokens": 1024,
+            "temperature": 0.0,
         }
         print(f'LLM: {config["base_url"]}')
     LLM.set(get_llm_client(llm_type, config))

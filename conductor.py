@@ -22,11 +22,11 @@ class State(TypedDict):
 
 def build(
         model: BaseChatModel,
-        tools: list[BaseTool],
+        tools: dict[str, BaseTool],
         prompts: dict[str, ChatPromptTemplate],
 ):
     planner: Runnable = build_planner(model, tools, prompts["plan"], prompts["replan"])
-    plan_and_execute: Runnable = build_scheduler(planner)
+    plan_and_execute: Runnable = build_scheduler(planner, model)
     join: Runnable = build_joiner(model, prompts["join"].partial(examples=''))
 
     graph = StateGraph(State)
