@@ -3,8 +3,10 @@ from pydantic import BaseModel, Field
 import asyncio
 import threading
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_core.tools import StructuredTool
+from langgraph.graph.graph import CompiledGraph
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 
@@ -31,7 +33,7 @@ def async_to_sync_safe(coro):
 
 
 def create_subagent_tool(
-        mcp_agent,
+        mcp_agent: CompiledGraph,
         tool_name: str,
         tool_desc: str,
 ) -> BaseTool:
@@ -42,15 +44,36 @@ def create_subagent_tool(
 
     # Define the tool function
     def call_agent(input: str, context: Optional[list[str]] = []) -> str:
+        content = input
+
         # You can optionally inject context if needed
-        agent_input = {"messages": [{"role": "user", "content": input}]}
-        if context:
-            config = {"configurable": {"context": context}}
-        else:
-            config = {}
-        output = async_to_sync_safe(mcp_agent.ainvoke(agent_input, config=config))
-        print(f'# <call_agent> {tool_name}\n >> input={agent_input}\n >> output={output}\n')
-        return output["output"] if isinstance(output, dict) and "output" in output else str(output)
+        # TODO: context test
+        if context is not None:
+            if isinstance(context, (list, tuple)):
+                context = ',\n'.join(context)
+            context = str(context).strip()
+            if context != '':
+                content = f'{content}\n\n<context>{context}</context>'
+
+        # `mcp_agent` input_schema is
+        # from langgraph.prebuilt.chat_agent_executor import AgentState
+        agent_input = {"messages": [HumanMessage(content)]}
+        agent_output = async_to_sync_safe(mcp_agent.ainvoke(agent_input))
+        output = None
+        if isinstance(agent_output, dict) and "messages" in agent_output:
+            for msg in agent_output["messages"][::-1]:
+                if isinstance(msg, (AIMessage, ToolMessage)):
+                    output = msg.content
+                    break
+        if output is None:
+            output = str(agent_output)
+
+        print(f'# <call_agent> {tool_name}\n'
+              f' >> input={input}, context={context}\n'
+              f' >> agent_input={agent_input}\n'
+              f' >> agent_output={agent_output}\n'
+              f' >> output={output}\n')
+        return output
 
     # Return as structured tool
     return StructuredTool.from_function(
@@ -87,7 +110,7 @@ def generate_tool_description(tool: StructuredTool) -> str:
     return "\n".join(lines)
 
 
-def generate_descriptions_for_tools(tools: List[BaseTool]) -> List[str]:
+def generate_descriptions_for_tools(tools: List[BaseTool]) -> str:
     header = (
         "You are an agent equipped with a set of MCP tools. Use these tools to accurately fulfill user requests.\n\n"
         "Each tool has a specific function signature, input requirements, and output format. Read them carefully before selecting and invoking a tool.\n\n"
@@ -118,7 +141,7 @@ def get_agent_client(config: dict, llm: BaseChatModel, *args, **kwargs) -> BaseT
     })
     tools = asyncio.run(client.get_tools())
     desc = generate_descriptions_for_tools(tools)
-    agent = create_react_agent(model=llm, tools=tools, prompt=desc)
+    agent: CompiledGraph = create_react_agent(model=llm, tools=tools, prompt=desc)
     print(f'# agent: {name}')
     for n, t in enumerate(tools, 1):
         print(f'  tool-#{n}: {t.name}, {t.description}')
