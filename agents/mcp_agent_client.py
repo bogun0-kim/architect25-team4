@@ -1,4 +1,4 @@
-from typing import List, get_type_hints, Optional
+from typing import List, get_type_hints, Optional, Union
 from pydantic import BaseModel, Field
 import asyncio
 import threading
@@ -43,14 +43,14 @@ def create_subagent_tool(
         context: Optional[list[str]] = Field(default=[], description="Optional context")
 
     # Define the tool function
-    def call_agent(input: str, context: Optional[list[str]] = []) -> str:
+    def call_agent(input: str, context: Optional[Union[str, List[str]]] = None) -> str:
         content = input
 
         # You can optionally inject context if needed
         # TODO: context test
         if context is not None:
             if isinstance(context, (list, tuple)):
-                context = ',\n'.join(context)
+                context = ',\n'.join([str(v) for v in context])
             context = str(context).strip()
             if context != '':
                 content = f'{content}\n\n<context>{context}</context>'

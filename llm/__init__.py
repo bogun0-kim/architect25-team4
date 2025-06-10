@@ -10,17 +10,19 @@ _DEBUG_STREAM_OUTPUT = False
 
 
 def _debug_inputs(func_name, config, input_, messages):
-    print(f'@@ {__file__} >> BaseChatModel.{func_name}(): config={config}')
-    print(f'@@ {__file__} >> BaseChatModel.{func_name}(): input={input_}')
-    print(f'@@ {__file__} >> BaseChatModel.{func_name}(): input->messages={messages}')
+    print(f'\n@@@@@@@@@@@@@@@@@@@@ BaseChatModel.{func_name}() @@@@@@@@@@@@@@@@@@@@')
+    print(f'@@ config: {config}')
     for n, msg in enumerate(messages, 1):
-        print(f'@@ {__file__} >> ==== input[{n}/{len(messages)}]-{msg.__class__.__name__} ====\n'
+        print(f'@@ ==================== input[{n}/{len(messages)}]-{msg.__class__.__name__} ========================================\n'
               f'{msg.content}\n'
-              f'================================================================================')
+              f'@@ --------------------------------------------------------------------------------\n'
+              f'@@ additional_kwargs={msg.additional_kwargs}\n'
+              f'@@ response_metadata={msg.response_metadata}\n'
+              f'@@ ================================================================================')
 
 
 def _debug(func_name, key, value):
-    print(f'@@ {__file__} >> BaseChatModel.{func_name}(): {key}={value}')
+    print(f'@@ BaseChatModel.{func_name}(): {key}={value}')
 
 
 class DebugChatOpenAI(ChatOpenAI):

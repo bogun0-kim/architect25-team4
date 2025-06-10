@@ -6,8 +6,9 @@ import requests
 # default_prompt = 'Tell me the current temperature in Seoul, and then tell me the result of adding 3 to that temperature.'
 # default_prompt = '지금 한국에서 제일 유명한 영화가 뭔지 찾아서, 제목이랑 평점 알려줘. 그리고 서울의 온도를 찾아서 평점이랑 더한 결과를 알려줘.'
 # default_prompt = 'Find out what the most popular movie in Korea is right now, and tell me its title and rating. Also, check the temperature in Seoul, and give me the result of adding the movie’s rating and the temperature.'
-default_prompt = 'Get the current temperature of Seoul and send it mail to ionia.kim@samsung.com'
-
+# default_prompt = 'Get the current temperature of Seoul and send it mail to sample25t4@gmail.com'
+# default_prompt = 'Find the title and rating of the most popular movie these days, add 10 points to the rating, and email both the movie title and the updated rating to sample25@mail.com.'
+default_prompt = 'Send an email to sample25@mail.com with the result of adding 10 to the current temperature in Seoul.'
 
 with gr.Blocks() as demo:
     gr.Markdown('# [DEMO] Multi-Agents Orchestration System 🤖')
