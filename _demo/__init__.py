@@ -22,7 +22,7 @@ def prepare():
         llm_type = "OPENAI"
         config = {
             "api_key": openai_api_key,
-            "model": os.getenv("OPENAI_MODEL", 'gpt-4.1-nano'),
+            "model": os.getenv("OPENAI_MODEL", 'gpt-4.1-mini'),
             "base_url": None,
             "max_tokens": 1024,
             "temperature": 0.0,
@@ -50,5 +50,5 @@ def prepare():
         print(f'LLM: {config["base_url"]}')
     LLM.set(get_llm_client(llm_type, config))
 
-    ToolManager.set(get_math_tool(LLM.get()))
-    ToolManager.set(get_search_tool())
+    #ToolManager.set(get_math_tool(LLM.get()))
+    #ToolManager.set(get_search_tool())
