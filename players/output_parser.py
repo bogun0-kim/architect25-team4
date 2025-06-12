@@ -152,12 +152,12 @@ class LLMCompilerPlanParser(BaseTransformOutputParser[Task], extra="allow"):
         # Optionally, action can be preceded by a thought
         if match := re.match(THOUGHT_PATTERN, line):
             thought = match.group(1)
-            print(f'@@ {__file__} >> _parse_task-THOUGHT: thought={thought}')
+            print(f'@@ [LLMCompiler.parse_task] THOUGHT: thought={thought}')
 
         # If action is parsed, return the task, and clear the buffer
         elif match := re.match(ACTION_PATTERN, line):
             idx, tool_name, raw_args, _ = match.groups()
-            print(f'@@ {__file__} >> _parse_task-ACTION: idx={idx}, tool_name={tool_name}, args="{raw_args}"')
+            print(f'@@ [LLMCompiler.parse_task] ACTION: idx={idx}, tool_name={tool_name}, args={raw_args}')
             task = instantiate_task(
                 idx=int(idx),
                 tool_name=tool_name,
@@ -168,6 +168,6 @@ class LLMCompilerPlanParser(BaseTransformOutputParser[Task], extra="allow"):
 
         # Else it is just dropped
         else:
-            print(f'@@ {__file__} >> _parse_task-NOTHING: line={line}')
+            print(f'@@ [LLMCompiler.parse_task] NOTHING: line={line}')
 
         return task, thought

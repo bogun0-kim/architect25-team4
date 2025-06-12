@@ -83,7 +83,10 @@ async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
     n_steps = 0
     yield '<< Processing >>'
     await asyncio.sleep(0.5)
-    for step in conductor.stream({"messages": [HumanMessage(content=user_message)]}):
+    for step in conductor.stream({
+        "user_request": user_message,
+        "messages": [HumanMessage(content=user_message)],
+    }):
         n_steps += 1
         step_name = list(step)[0]
         messages = step[step_name]["messages"]

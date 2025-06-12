@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 import asyncio
 import threading
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, FunctionMessage
 from langchain_core.tools import BaseTool
 from langchain_core.tools import StructuredTool
 from langgraph.graph.graph import CompiledGraph
@@ -40,7 +40,7 @@ def create_subagent_tool(
     # Define the input schema
     class SubAgentInput(BaseModel):
         input: str = Field(..., description="The input string to process through the sub-agent")
-        context: Optional[list[str]] = Field(default=[], description="Optional context")
+        context: Optional[Union[str, List[str]]] = Field(default=[], description="Optional context")
 
     # Define the tool function
     def call_agent(input: str, context: Optional[Union[str, List[str]]] = None) -> str:
@@ -50,7 +50,7 @@ def create_subagent_tool(
         # TODO: context test
         if context is not None:
             if isinstance(context, (list, tuple)):
-                context = ',\n'.join([str(v) for v in context])
+                context = ',\n'.join([v for c in context if (v := str(c).strip()) != ''])
             context = str(context).strip()
             if context != '':
                 content = f'{content}\n\n<context>{context}</context>'
@@ -61,14 +61,24 @@ def create_subagent_tool(
         agent_output = async_to_sync_safe(mcp_agent.ainvoke(agent_input))
         output = None
         if isinstance(agent_output, dict) and "messages" in agent_output:
-            for msg in agent_output["messages"][::-1]:
-                if isinstance(msg, (AIMessage, ToolMessage)):
-                    output = msg.content
-                    break
+            output = []
+            for msg in agent_output["messages"]:
+                # TODO: AIMessage?
+                if not isinstance(msg, (AIMessage, ToolMessage, FunctionMessage)):
+                    continue
+                content = msg.content.strip()
+                if content != '' and content not in output:
+                    output.append(content)
+            if len(output) == 0:
+                # TODO: no response? None vs error message
+                # output = None
+                output = f'[ERROR] No response from the agent: {tool_name}'
+            else:
+                output = '\n'.join(output)
         if output is None:
             output = str(agent_output)
 
-        print(f'# <call_agent> {tool_name}\n'
+        print(f'@@ [call_agent] {tool_name}\n'
               f' >> input={input}, context={context}\n'
               f' >> agent_input={agent_input}\n'
               f' >> agent_output={agent_output}\n'

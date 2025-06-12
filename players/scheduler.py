@@ -9,44 +9,33 @@ from typing import Any, Dict, Iterator, List, Union, Optional
 from typing_extensions import TypedDict
 from concurrent.futures import ThreadPoolExecutor, wait
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
-from langchain_core.prompt_values import ChatPromptValue
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
 from langchain_core.runnables import chain as as_runnable
 from langchain_core.runnables.base import Runnable
 from .output_parser import Task
 
 
 # TODO:
-_PRE_PLANNER_PROMPT_TEMPLATE = """
-<USER_REQUEST>
-{user_query}
-</USER_REQUEST>
-
-Break down the tasks needed to fulfill the user request.
-List only the task breakdown and their descriptions.""".strip()
-
-_SIMPLE_PLAN_TEMPLATE = "<TASK_LIST>\n{simple_plan}\n</TASK_LIST>"
-
-_RESPONSE_REFINER_PROMPT_TEMPLATE = """
+_RESPONSE_RESOLVER_PROMPT_TEMPLATE = """
 <QUERY>{query}<QUERY>
-<RESPONSE>{response}</RESPONSE>
+<REFERENCE>{reference}</REFERENCE>
 
-Find the correct answer corresponding to the QUERY from the RESPONSE.
+Find the correct answer corresponding to the QUERY from the REFERENCE.
 Do not include any additional explanations, ONLY provide the answer.""".strip()
 
 
 class SchedulerInput(TypedDict):
-    model: BaseChatModel
-    user_query: str
     messages: List[BaseMessage]
     tasks: Iterator[Task]
+    model: BaseChatModel
 
 
 class ExecutorInput(TypedDict):
-    model: Optional[BaseChatModel]
-    user_query: str
     task: Task
     observations: Dict[int, ToolMessage]
+    model: Optional[BaseChatModel]
 
 
 def _get_observations(messages: List[BaseMessage]) -> Dict[int, ToolMessage]:
@@ -54,70 +43,17 @@ def _get_observations(messages: List[BaseMessage]) -> Dict[int, ToolMessage]:
     return {int(msg.additional_kwargs["idx"]): msg for msg in messages[::-1] if isinstance(msg, ToolMessage)}
 
 
-def _resolve_arg(
-        arg: Union[str, Any],
-        observations: Dict[int, ToolMessage],
-        model: BaseChatModel,
-        user_query: str,
-):
+def _resolve_arg(arg: Union[str, Any], observations: Dict[int, ToolMessage]):
     if arg is None:
         return None
     if isinstance(arg, (list, tuple)):
-        return [_resolve_arg(v, observations, model, user_query) for v in arg]
+        return [_resolve_arg(v, observations) for v in arg]
     if isinstance(arg, dict):
-        return {k: _resolve_arg(v, observations, model, user_query) for k, v in arg.items()}
+        return {k: _resolve_arg(v, observations) for k, v in arg.items()}
     if not isinstance(arg, str):
         return arg
 
     _ID_PATTERN = r'\$\{?(\d+)\}?'  # $1 or ${1} -> 1
-
-    # TODO: test
-#     _test_mode = False
-#     if _test_mode:
-#         var_idx_ref = []
-#         for m in re.compile(_ID_PATTERN).finditer(arg):
-#             variable = m.group(0)
-#             index = int(m.group(1))
-#             observation: ToolMessage = observations.get(index, None)
-#             if observation is None:
-#                 reference = variable
-#             else:
-#                 reference = observation.additional_kwargs.get("result", None)
-#                 if reference is None:
-#                     reference = observation.content
-#             var_idx_ref.append([variable, index, reference])
-#         if len(var_idx_ref) == 0:
-#             return arg
-#
-#         _RESOLVER_PROMPT_TEMPLATE = f"""
-# <QUERY>{user_query}</QUERY>
-# {{references}}
-# <PROBLEM>{{problem}}</PROBLEM>
-#
-# PROBLEM contains one or more variables in the format of $ID.
-# Each variable $ID must be replaced with a constant value extracted exclusively from REFERENCE-ID that matches the same number.
-# For example, $1 must be filled using information from REFERENCE-1, and $3 must be filled using information from REFERENCE-3.
-# First, understand the contents of the QUERY, and based on that, determine which information from each REFERENCE should be used.
-# Then, replace each $ID with the appropriate constant value to complete the PROBLEM.
-# Only submit the completed PROBLEM as your answer. Do not include any explanations, comments, or additional text.
-# Now, complete the PROBLEM in its final form.
-#         """.strip()
-#         _REFERENCE_TEMPLATE = '<REFERENCE-{idx}>{content}</REFERENCE-{idx}>'
-#
-#         print(f'@@ {__file__} >> _resolve_arg2: arg={arg}')
-#         try:
-#             resolver_prompt = _RESOLVER_PROMPT_TEMPLATE.format(
-#                 references='\n'.join([_REFERENCE_TEMPLATE.format(idx=i, content=r) for v, i, r in var_idx_ref]),
-#                 problem=arg)
-#             resolved_arg = model.invoke(ChatPromptValue(messages=[HumanMessage(resolver_prompt)]))
-#             print(f'@@ {__file__} >> _resolve_arg2: resolved_arg={resolved_arg}')
-#             return resolved_arg.content
-#         except Exception as e:
-#             for v, i, r in var_idx_ref:
-#                 arg = arg.replace(v, r)
-#             print(f'@@ {__file__} >> _resolve_arg2: replaced={arg} / {e}')
-#             return arg
-
     for m in re.compile(_ID_PATTERN).finditer(arg):
         index = int(m.group(1))
         observation: ToolMessage = observations.get(index, None)
@@ -146,87 +82,86 @@ def _execute_with_retry(func, *args, max_attempts: int = 3, retry_delay_seconds:
             time.sleep(retry_delay_seconds)
 
 
+def _resolve_response(resolved_args, response, model: BaseChatModel):
+    # TODO: to Runnable?
+
+    def _query(value, sep=',') -> Union[str, None]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return None if (q := value.strip()) == '' else q
+        if isinstance(value, (list, tuple)):
+            value = [q for v in value if (q := _query(v, sep)) is not None]
+            return None if len(value) == 0 else sep.join(value)
+        if isinstance(value, dict):
+            value = {k: q for k, v in value.items() if (q := _query(v, sep)) is not None}
+            if len(value) == 0:
+                return None
+            elif len(value) == 1:
+                return str(value[list(value)[0]])
+            else:
+                return sep.join([f'{k}={v}' for k, v in value.items()])
+        return _query(str(value))
+
+    query = _query(resolved_args)
+    response = str(response).strip()
+    if query is not None and response != '':
+        try:
+            print(f'@@ [resolve_response] query={query}, response={response}')
+            prompt = ChatPromptTemplate.from_messages([
+                HumanMessagePromptTemplate.from_template(_RESPONSE_RESOLVER_PROMPT_TEMPLATE)])
+            parser = StrOutputParser()
+            _chain = prompt | model | parser
+            resolved = _chain.invoke({"query": query, "reference": response})
+            print(f'@@ [resolve_response] resolved={resolved}')
+            return resolved
+        except Exception as e:
+            print(f'@@ [resolve_response] failed: {e}')
+    return None
+
+
 def _execute_task(
         task: Task,
         observations: Dict[int, ToolMessage],
         config,
         model: BaseChatModel,
-        user_query: str,
 ) -> List[str]:
     tool = task["tool"]
-    args = task["args"]
-    print(f'@@ {__file__} >> _execute_task: tool={type(tool)}, {tool}')
+    print(f'@@ [execute_task] tool={type(tool)}, {tool}')
     if isinstance(tool, str):
         return [tool]
 
-    ################################################################################
-    # TODO: Resolve arguments
-    ################################################################################
-    print(f'@@ {__file__} >> _execute_task: args={type(args)}, {args}')
+    args = task["args"]
+    print(f'@@ [execute_task] args={type(args)}, {args}')
     try:
-        resolved_args = _resolve_arg(args, observations, model, user_query)
+        resolved_args = _resolve_arg(args, observations)
     except Exception as e:
-        print(f'@@ {__file__} >> _execute_task: failed to resolve args. {e}')
-        error = (
+        return [
             f'ERROR'
             f' (Failed to call {tool.name} with args {args}.'
-            f' Args could not be resolved. Error: {repr(e)})')
-        return [error]
-    print(f'@@ {__file__} >> _execute_task: resolved_args={type(resolved_args)}, {resolved_args}')
-    ################################################################################
+            f' Args could not be resolved. Error: {repr(e)})']
+    print(f'@@ [execute_task] resolved_args={type(resolved_args)}, {resolved_args}')
 
-    ################################################################################
-    # Execute tool
-    ################################################################################
-    print(f'@@ {__file__} >> _execute_task: execute> {type(tool)}.invoke({resolved_args}, config={config})')
-    output, error = _execute_with_retry(tool.invoke, resolved_args, config)
+    print(f'@@ [execute_task] execute: {type(tool)}.invoke({resolved_args}, config={config})')
+    response, error = _execute_with_retry(tool.invoke, resolved_args, config)
     if error is not None:
-        error = (
+        return [
             f'ERROR'
             f' (Failed to call {tool.name} with args {args}.'
-            f' Args resolved to {resolved_args}. Error: {repr(error)})')
-        return [error]
-    print(f'@@ {__file__} >> _execute_task: tool_output> {output}')
-    ################################################################################
+            f' Args resolved to {resolved_args}. Error: {repr(error)})']
+    print(f'@@ [execute_task] tool_response={response}')
 
-    ################################################################################
-    # TODO: Refine the response of tool
-    ################################################################################
-    query = None
-    if isinstance(resolved_args, str):
-        if resolved_args.strip() != '':
-            query = resolved_args
-    elif isinstance(resolved_args, (list, tuple)):
-        if len(resolved_args) > 0:
-            query = '\n'.join([str(v) for v in resolved_args])
-    elif isinstance(resolved_args, dict):
-        if len(resolved_args) == 1:
-            query = resolved_args[list(resolved_args)[0]]
-        elif len(resolved_args) > 1:
-            query = '\n'.join([f'{k}={v}' for k, v in resolved_args.items()])
-    if query is not None:
-        print(f'@@ {__file__} >> _execute_task: refine> query={query}, response={output}')
-        try:
-            refiner_prompt = _RESPONSE_REFINER_PROMPT_TEMPLATE.format(query=query, response=str(output))
-            refined_output = model.invoke(ChatPromptValue(messages=[HumanMessage(refiner_prompt)]))
-            print(f'@@ {__file__} >> _execute_task: refined_output> {refined_output}')
-            return [output, refined_output.content]
-        except Exception as e:
-            print(f'@@ {__file__} >> _execute_task: not refined. {e}')
-            return [output]
-
-    return [output]
+    resolved_response = _resolve_response(resolved_args, response, model)
+    return [response] if resolved_response is None else [response, resolved_response]
 
 
 @as_runnable
 def _schedule_task(executor_input: ExecutorInput, config):
     task: Task = executor_input["task"]
     observations: Dict[int, ToolMessage] = executor_input["observations"]
+    model: BaseChatModel = executor_input["model"]
     try:
-        outputs = _execute_task(
-            task, observations, config,
-            executor_input.get("model", None),
-            executor_input.get("user_query", None))
+        outputs = _execute_task(task, observations, config, model)
     except Exception as e:
         import traceback
         outputs = [traceback.format_exception(e)]
@@ -245,7 +180,6 @@ def _schedule_pending_task(
         task: Task,
         observations: Dict[int, ToolMessage],
         model: BaseChatModel,
-        user_query: str,
         retry_delay_seconds: float = 0.2,
 ):
     while True:
@@ -255,9 +189,8 @@ def _schedule_pending_task(
             time.sleep(retry_delay_seconds)
             continue
 
-        _schedule_task.invoke(ExecutorInput(
-            task=task, observations=observations,
-            model=model, user_query=user_query))
+        _schedule_task.invoke(
+            ExecutorInput(task=task, observations=observations, model=model))
         break
 
 
@@ -271,7 +204,6 @@ def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
     # If this ceases to be a good assumption, you can either
     # adjust to do a proper topological sort (not-stream)
     # or use a more complicated data structure.
-    user_query = scheduler_input["user_query"]
     messages = scheduler_input["messages"]
     tasks = scheduler_input["tasks"]
     model = scheduler_input["model"]
@@ -296,15 +228,15 @@ def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
             dependencies = task["dependencies"]
             if dependencies and (any([d not in observations for d in dependencies])):
                 futures.append(executor.submit(
-                    _schedule_pending_task, task, observations, model, user_query, retry_delay_seconds))
+                    _schedule_pending_task, task, observations, model, retry_delay_seconds))
 
             # No dependencies or all dependencies satisfied, can schedule now
             else:
                 _schedule_task.invoke(
-                    ExecutorInput(task=task, observations=observations, model=model, user_query=user_query))
+                    ExecutorInput(task=task, observations=observations, model=model))
                 # futures.append(executor.submit(
                 #     _schedule_task.invoke,
-                #     ExecutorInput(task=task, observations=observations, model=model, user_query=user_query)))
+                #     ExecutorInput(task=task, observations=observations, model=model)))
 
         # All tasks have been submitted or enqueued
         # Wait for them to complete
@@ -325,55 +257,27 @@ def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
     return tool_messages
 
 
-@as_runnable
-def _pre_plan_without_descriptions(inputs):
-    messages = inputs["messages"]
-    model = inputs["model"]
-    user_query: str = ''
-    for msg in messages:
-        if isinstance(msg, HumanMessage):
-            user_query = msg.content
-            break
-    pre_planner = _PRE_PLANNER_PROMPT_TEMPLATE.format(user_query=user_query)
-    simple_plan = model.invoke(ChatPromptValue(messages=[HumanMessage(pre_planner)]))
-    messages.append(AIMessage(
-        content=_SIMPLE_PLAN_TEMPLATE.format(simple_plan=simple_plan.content),
-        additional_kwargs={"TEST": True}))
-    return messages
-
-
 def build(planner: Runnable, model: BaseChatModel) -> Runnable:
 
     @as_runnable
     def plan_and_execute(state):
-        # Get messages and extract user_query
+        for msg in state["messages"]:
+            print(f'@@ [plan_and_execute] {msg.__class__.__name__}={msg}')
+
         messages = state["messages"]
-        user_query = None
-        for msg in messages:
-            if user_query is None and isinstance(msg, HumanMessage):
-                user_query = msg.content
-            print(f'@@ {__file__} >> plan_and_execute[1]: messages={msg.__class__} {msg}')
-
-        if len(messages) == 1:
-            messages = _pre_plan_without_descriptions.invoke({"messages": messages, "model": model})
-            for msg in messages:
-                print(f'@@ {__file__} >> plan_and_execute[1a]: messages={msg.__class__} {msg}')
-
         tasks: Iterator[Task] = planner.stream(messages)
-        print(f'@@ {__file__} >> plan_and_execute[2]: tasks={tasks}')
         # Begin executing the planner immediately
         try:
             tasks = itertools.chain([next(tasks)], tasks)
         except StopIteration:
             # Handle the case where tasks is empty.
             tasks = iter([])
-        print(f'@@ {__file__} >> plan_and_execute[3] tasks={tasks}')
+        print(f'@@ [plan_and_execute] tasks={tasks}')
 
         # Execute tasks
-        executed_tasks = _schedule_tasks.invoke(SchedulerInput(
-            messages=messages, tasks=tasks,
-            model=model, user_query=user_query))
-        print(f'@@ {__file__} >> plan_and_execute[4] executed_tasks={executed_tasks}')
+        executed_tasks = _schedule_tasks.invoke(
+            SchedulerInput(messages=messages, tasks=tasks, model=model))
+        print(f'@@ [plan_and_execute] executed_tasks={executed_tasks}')
 
         return {"messages": executed_tasks}
 
