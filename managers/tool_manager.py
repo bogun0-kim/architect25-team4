@@ -26,6 +26,11 @@ class ToolManager:
         return _DATA.pop(tool.name if isinstance(tool, BaseTool) else str(tool), None)
 
     @staticmethod
+    def list() -> list[BaseTool]:
+        global _DATA
+        return list(_DATA.values())
+
+    @staticmethod
     def data() -> dict[str, BaseTool]:
         global _DATA
         return dict(_DATA)

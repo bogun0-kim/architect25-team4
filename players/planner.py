@@ -23,14 +23,6 @@ def build(
     replanner_prompt = prompt_template.partial(
         replan=replanner_description, num_tools=num_tools, tool_descriptions=tool_descriptions)
 
-    print(f'@@@@ BUILDING @@@@')
-    print('@@ <planner_prompt> @@')
-    planner_prompt.pretty_print()
-    print('@@ <replanner_prompt> @@')
-    replanner_prompt.pretty_print()
-    print('@@ <tool_descriptions> @@')
-    print(tool_descriptions)
-
     def should_replan(messages: list):
         # Context is passed as a system message
         return isinstance(messages[-1], SystemMessage)

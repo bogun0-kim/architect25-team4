@@ -11,56 +11,46 @@ from langchain_core.tools import BaseTool
 
 THOUGHT_PATTERN = r"Thought: ([^\n]*)"
 ACTION_PATTERN = r"\n*(\d+)\. (\w+)\((.*)\)(\s*#\w+\n)?"
-# ACTION_LIKE_PATTERN = r"\n*(\d+)\. (\w+)\((.*)\)(\s*#\w+\n)?"
 ID_PATTERN = r"\$\{?(\d+)\}?"  # $1 or ${1} -> 1
 END_OF_PLAN = ""
 JOINER_TOOL_NAME = "join"
 
 
-def _parse_string_arguments(raw_args: str, tool: BaseTool) -> Dict[str, Any]:
+def _ast_parse(arg: str) -> Any:
+    try:
+        return ast.literal_eval(arg)
+    except:  # noqa
+        return arg
+
+
+def _parse_llm_compiler_action_args(args: str, tool: Union[str, BaseTool]) -> Dict[str, Any]:
     """Parse arguments from a string."""
 
-    if raw_args is None or raw_args == '':
+    if args is None or args == '' or isinstance(tool, str):
         return {}
 
-    tokens = []
-    _current = []
-    _bracket = 0
-    for c in raw_args:
-        if c in '{[(':
-            _bracket += 1
-        elif c in ')]}':
-            _bracket -= 1
-        if c == ',' and _bracket == 0:
-            token = ''.join(_current).strip()
-            if token:
-                tokens.append(token)
-            _current = []
-        else:
-            _current.append(c)
-    if _current:
-        tokens.append(''.join(_current).strip())
+    extracted_args = {}
+    tool_key = None
+    prev_idx = None
+    for key in tool.args.keys():
+        # Split if present
+        if f"{key}=" in args:
+            idx = args.index(f"{key}=")
+            if prev_idx is not None:
+                extracted_args[tool_key] = _ast_parse(args[prev_idx:idx].strip().rstrip(","))
+            args = args.split(f"{key}=", 1)[1]
+            tool_key = key
+            prev_idx = 0
+    if prev_idx is not None:
+        extracted_args[tool_key] = _ast_parse(args[prev_idx:].strip().rstrip(",").rstrip(")"))
 
-    kwargs = {}
-    arg_names = list(tool.args.keys())
-    for token in tokens:
-        if '=' in token and not token.startswith('{') and not token.startswith('[') and not token.startswith('('):
-            key, value = token.split('=', 1)
-            key = key.strip()
-            for k in [key, key.lower(), key.upper(), f'_{key}']:
-                if k in arg_names:
-                    arg_names.pop(arg_names.index(k))
-                    key = k
-                    break
-            value = value.strip()
-        else:
-            key = arg_names.pop(0)
-            value = token.strip()
-        try:
-            kwargs[key] = ast.literal_eval(value)
-        except:  # noqa
-            kwargs[key] = value
-    return kwargs
+    # Check required arguments
+    is_valid = True
+    for key, meta in tool.args.items():
+        if "default" not in meta and key not in extracted_args:
+            is_valid = False
+            break
+    return extracted_args if is_valid else args
 
 
 def default_dependency_rule(idx: int, args: str):
@@ -99,12 +89,12 @@ def instantiate_task(
         except KeyError as e:
             raise OutputParserException(
                 f'Tool "{tool_name}" not found. (available={list(tools.keys())}') from e
-        tool_args = _parse_string_arguments(raw_args, tool)
+        tool_args = _parse_llm_compiler_action_args(raw_args, tool)
     dependencies = _get_dependencies_from_graph(idx, tool_name, tool_args)
     return Task(idx=idx, tool=tool, args=tool_args, dependencies=dependencies, thought=thought)
 
 
-class LLMCompilerPlanParser(BaseTransformOutputParser[dict], extra="allow"):
+class LLMCompilerPlanParser(BaseTransformOutputParser[Task], extra="allow"):
     """Planning output parser."""
 
     tools: Dict[str, BaseTool]
@@ -115,9 +105,13 @@ class LLMCompilerPlanParser(BaseTransformOutputParser[dict], extra="allow"):
             config: RunnableConfig | None = None,
             **kwargs: Any | None,
     ) -> Iterator[Task]:
+        # TODO: not called?
+        print('@@@@@@@@ LLMCompilerPlanParser.stream()')
         yield from self.transform([input_], config, **kwargs)
 
     def parse(self, text: str) -> List[Task]:
+        # TODO: not called?
+        print('@@@@@@@@ LLMCompilerPlanParser.parse()')
         return list(self._transform([text]))
 
     def _transform(self, input_: Iterator[Union[str, BaseMessage]]) -> Iterator[Task]:
@@ -158,13 +152,12 @@ class LLMCompilerPlanParser(BaseTransformOutputParser[dict], extra="allow"):
         # Optionally, action can be preceded by a thought
         if match := re.match(THOUGHT_PATTERN, line):
             thought = match.group(1)
-            print(f'# <_parse_task> THOUGHT: thought={thought}')
+            print(f'@@ [LLMCompiler.parse_task] THOUGHT: thought={thought}')
 
         # If action is parsed, return the task, and clear the buffer
         elif match := re.match(ACTION_PATTERN, line):
             idx, tool_name, raw_args, _ = match.groups()
-            print(f'# <_parse_task> ACTION: idx={idx}, tool_name={tool_name}, args="{raw_args}"')
-
+            print(f'@@ [LLMCompiler.parse_task] ACTION: idx={idx}, tool_name={tool_name}, args={raw_args}')
             task = instantiate_task(
                 idx=int(idx),
                 tool_name=tool_name,
@@ -175,6 +168,6 @@ class LLMCompilerPlanParser(BaseTransformOutputParser[dict], extra="allow"):
 
         # Else it is just dropped
         else:
-            print(f'# <_parse_task> NOTHING: line={line}')
+            print(f'@@ [LLMCompiler.parse_task] NOTHING: line={line}')
 
         return task, thought

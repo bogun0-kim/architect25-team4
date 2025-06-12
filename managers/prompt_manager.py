@@ -2,21 +2,28 @@
 # Prompts
 ################################################################################
 
-import json
+import os
 from langchain_core.load.load import loads
 from langchain_core.prompts import ChatPromptTemplate
 
 
-def load_from_json(path) -> ChatPromptTemplate:
-    with open(path, 'r', encoding='utf-8') as f:
-        data = f.read()
-    return loads(data)
+def load_from_json(data: str | dict | list) -> ChatPromptTemplate:
+    import json
+    if isinstance(data, str) and os.path.isfile(data):
+        with open(data, 'r', encoding='utf-8') as f:
+            json_obj = json.load(f)
+    elif isinstance(data, str):
+        json_obj = json.loads(data)
+    else:
+        json_obj = data
+    json_str = json.dumps(json_obj, ensure_ascii=True)
+    return loads(json_str)
 
 
-plan_prompt_template_path = '/home/user/bogun/source/architect25-team4/managers/plan.json'
-join_prompt_template_path = '/home/user/bogun/source/architect25-team4/managers/join.json'
-_plan: ChatPromptTemplate = load_from_json(plan_prompt_template_path)
-_join: ChatPromptTemplate = load_from_json(join_prompt_template_path)
+plan_prompt_template_json = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plan.json'))
+join_prompt_template_json = os.path.abspath(os.path.join(os.path.dirname(__file__), 'join.json'))
+_plan: ChatPromptTemplate = load_from_json(plan_prompt_template_json)
+_join: ChatPromptTemplate = load_from_json(join_prompt_template_json)
 
 _replan: str = \
     ' - You are given "Previous Plan" which is the plan that the previous agent created along with the execution results' \

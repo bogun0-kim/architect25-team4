@@ -11,35 +11,39 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from players.preplanner import build as build_preplanner
 from players.planner import build as build_planner
 from players.scheduler import build as build_scheduler
 from players.joiner import build as build_joiner
 
 
 class State(TypedDict):
+    user_request: str
     messages: Annotated[list, add_messages]
 
 
 def build(
         model: BaseChatModel,
         tools: dict[str, BaseTool],
-        prompts: dict[str, ChatPromptTemplate | str],
+        prompts: dict[str, ChatPromptTemplate],
 ):
+    preplan: Runnable = build_preplanner(model)  # TODO: prompt
     planner: Runnable = build_planner(model, tools, prompts["plan"], prompts["replan"])
-    plan_and_execute: Runnable = build_scheduler(planner)
+    plan_and_execute: Runnable = build_scheduler(planner, model)
     join: Runnable = build_joiner(model, prompts["join"].partial(examples=''))
 
     graph = StateGraph(State)
 
     # Define vertices
-    # We defined plan_and_execute above already.
-    # Assign each node to a state variable to update.
+    preplanner_node = "preplan"
     planner_executor_node = "plan_and_execute"
     joiner_node = "join"
+    graph.add_node(preplanner_node, preplan)
     graph.add_node(planner_executor_node, plan_and_execute)
     graph.add_node(joiner_node, join)
 
     # Define edges
+    graph.add_edge(preplanner_node, planner_executor_node)
     graph.add_edge(planner_executor_node, joiner_node)
 
     # This condition determines looping logic
@@ -49,5 +53,5 @@ def build(
     # Next, we pass in the function that will determine which node is called next.
     graph.add_conditional_edges(joiner_node, should_continue)
 
-    graph.add_edge(START, planner_executor_node)
+    graph.add_edge(START, preplanner_node)
     return graph.compile()

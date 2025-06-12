@@ -3,7 +3,6 @@
 ################################################################################
 
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
 
 
 # TODO: simple singleton instance
@@ -12,16 +11,16 @@ _LLM: BaseChatModel
 
 class LLM:
     @staticmethod
-    def set(*args, **kwargs):
+    def set(llm: BaseChatModel):
         global _LLM
-        _LLM = ChatOpenAI(*args, **kwargs)
+        _LLM = llm
 
     @staticmethod
-    def get():
+    def get() -> BaseChatModel:
         global _LLM
         return _LLM
 
     @staticmethod
-    def name():
+    def name() -> str:
         global _LLM
         return _LLM.name
