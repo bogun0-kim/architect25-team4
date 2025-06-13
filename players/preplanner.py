@@ -1,5 +1,5 @@
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.output_parsers import BaseOutputParser
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
 from langchain_core.runnables import chain as as_runnable
@@ -12,8 +12,11 @@ _PREPLANNER_PROMPT_TEMPLATE = """
 {user_request}
 </USER_REQUEST>
 
-Break down the tasks needed to fulfill the user request.
-List only the task breakdown and their descriptions.""".strip()
+Break down the tasks needed to fulfill the user request.  
+Each task must be a minimal unit of action that contributes to fulfilling the overall request.  
+Only decompose the original request — do not infer, elaborate, or add any new information that is not explicitly stated.  
+Avoid rephrasing or interpreting the user's intent beyond what is written.
+Return only the list of task breakdowns and their brief descriptions.""".strip()
 
 _SIMPLE_PLAN_TEMPLATE = "<TASK_LIST>\n{}\n</TASK_LIST>"
 
@@ -43,6 +46,9 @@ def build(
 
     @as_runnable
     def preplan(state):
-        return {"messages": state["messages"] + [_chain.invoke({"user_request": state["user_request"]})]}
+        if len([True for msg in state["messages"] if isinstance(msg, HumanMessage)]) > 1:
+            return {"messages": state["messages"]}
+        else:
+            return {"messages": state["messages"] + [_chain.invoke({"user_request": state["user_request"]})]}
 
     return preplan
