@@ -17,7 +17,7 @@ import agents
 prepare()
 
 ToolManager.set(agents.get_agent_client("mcp", {
-    "name": "A25T4_mail_agent",
+    "name": "mail_agent",
     "description": f"""
 {{agent_name}}(input="input message for {{agent_name}}", context="context for {{agent_name}}") -> str:
 * This is a unified interface to a multi-tool agent. It takes a natural language input, interprets the request, and uses internal MCP tools to execute the appropriate actions.
@@ -29,7 +29,7 @@ ToolManager.set(agents.get_agent_client("mcp", {
 * `{{agent_name}}` action will not see the output of the previous actions unless you provide it as `context`. You MUST provide the output of the previous actions as `context` if you need to refer to them.
 * You MUST NEVER provide `search` type action's outputs as a variable in the `query` argument. This is because `search` returns a text blob, not a structured email object. Therefore, when you need to provide an output of `search` action, you MUST provide it as a `context` argument to `mail` action. For example, 1. search("John’s email") and then 2. {{agent_name}}("get sender of $1") is NEVER allowed. Use 2. {{agent_name}}("get sender of John’s email", context=["$1"]) instead.
 * When you ask a question about `context`, specify the email fields explicitly. For instance, "what is the subject of this email?" or "who is the sender?" instead of vague questions like "what is this?"
-    """.strip().format(agent_name='A25T4_mail_agent'),
+    """.strip().format(agent_name='mail_agent'),
     "mcp": {
         "transport": "streamable_http",
         "url": "http://localhost:8002/mcp",
@@ -83,7 +83,7 @@ async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
     n_steps = 0
     yield '<< Processing >>'
     await asyncio.sleep(0.5)
-    for step in conductor.stream({
+    async for step in conductor.astream({
         "user_request": user_message,
         "messages": [HumanMessage(content=user_message)],
     }):

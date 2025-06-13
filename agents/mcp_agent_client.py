@@ -10,28 +10,6 @@ from langgraph.graph.graph import CompiledGraph
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 
-
-# This function runs an async coroutine
-def async_to_sync_safe(coro):
-    result = None
-    error = None
-
-    def runner():
-        nonlocal result, error
-        try:
-            result = asyncio.run(coro)
-        except Exception as e:
-            error = e
-
-    thread = threading.Thread(target=runner)
-    thread.start()
-    thread.join()
-
-    if error:
-        raise error
-    return result
-
-
 def create_subagent_tool(
         mcp_agent: CompiledGraph,
         tool_name: str,
@@ -43,7 +21,7 @@ def create_subagent_tool(
         context: Optional[Union[str, List[str]]] = Field(default=[], description="Optional context")
 
     # Define the tool function
-    def call_agent(input: str, context: Optional[Union[str, List[str]]] = None) -> str:
+    async def call_agent(input: str, context: Optional[Union[str, List[str]]] = None) -> str:
         content = input
 
         # You can optionally inject context if needed
@@ -58,7 +36,7 @@ def create_subagent_tool(
         # `mcp_agent` input_schema is
         # from langgraph.prebuilt.chat_agent_executor import AgentState
         agent_input = {"messages": [HumanMessage(content)]}
-        agent_output = async_to_sync_safe(mcp_agent.ainvoke(agent_input))
+        agent_output = await mcp_agent.ainvoke(agent_input)
         output = None
         if isinstance(agent_output, dict) and "messages" in agent_output:
             output = []
@@ -89,7 +67,7 @@ def create_subagent_tool(
     return StructuredTool.from_function(
         name=tool_name,
         description=tool_desc,
-        func=call_agent,
+        coroutine=call_agent,
         args_schema=SubAgentInput,
     )
 
@@ -114,9 +92,8 @@ def generate_tool_description(tool: StructuredTool) -> str:
             lines.append(f" - `{name}`: {typename} type input.")
             if name == "context" and "list" in typename.lower():
                 lines.append(" - You can optionally provide a list of strings as `context` to help the tool operate correctly.")
-    else:
-        lines.append(" - (No input schema found)")
-
+    #else:
+    #    lines.append(" - (No input schema found)")
     return "\n".join(lines)
 
 
@@ -137,7 +114,7 @@ def generate_descriptions_for_tools(tools: List[BaseTool]) -> str:
         "- Always specify the units you expect when asking about weather. For example, ask 'what is the temperature in Celsius' instead of just 'what is the temperature'.\n"
     )
     tool_descriptions = [generate_tool_description(tool) for tool in tools]
-    return header + "\n\n" + "\n\n".join(tool_descriptions)
+    return header + "\n\n" + "============== Available Tool ==============\n" +"\n\n".join(tool_descriptions)
 
 
 def get_agent_client(config: dict, llm: BaseChatModel, *args, **kwargs) -> BaseTool:

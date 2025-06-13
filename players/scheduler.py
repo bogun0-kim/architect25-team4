@@ -5,6 +5,7 @@
 import re
 import time
 import itertools
+import asyncio
 from typing import Any, Dict, Iterator, List, Union, Optional
 from typing_extensions import TypedDict
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -71,18 +72,18 @@ def _resolve_arg(arg: Union[str, Any], observations: Dict[int, ToolMessage]):
     return arg
 
 
-def _execute_with_retry(func, *args, max_attempts: int = 3, retry_delay_seconds: float = 0.2, **kwargs):
+async def _execute_with_retry(coroutine, *args, max_attempts: int = 3, retry_delay_seconds: float = 0.2, **kwargs):
     for attempt in range(1, max_attempts + 1):
         try:
-            return func(*args, **kwargs), None
+            return await coroutine(*args, **kwargs), None
         except Exception as e:
-            print(f'# [{attempt}/{max_attempts}] Failed to call: {func} (Exception={e})')
+            print(f'# [{attempt}/{max_attempts}] Failed to call: {coroutine} (Exception={e})')
             if max_attempts <= attempt:
                 return None, e
-            time.sleep(retry_delay_seconds)
+            await asyncio.sleep(retry_delay_seconds)
 
 
-def _resolve_response(resolved_args, response, model: BaseChatModel):
+async def _resolve_response(resolved_args, response, model: BaseChatModel):
     # TODO: to Runnable?
 
     def _query(value, sep=',') -> Union[str, None]:
@@ -112,7 +113,7 @@ def _resolve_response(resolved_args, response, model: BaseChatModel):
                 HumanMessagePromptTemplate.from_template(_RESPONSE_RESOLVER_PROMPT_TEMPLATE)])
             parser = StrOutputParser()
             _chain = prompt | model | parser
-            resolved = _chain.invoke({"query": query, "reference": response})
+            resolved = await _chain.ainvoke({"query": query, "reference": response})
             print(f'@@ [resolve_response] resolved={resolved}')
             return resolved
         except Exception as e:
@@ -120,7 +121,7 @@ def _resolve_response(resolved_args, response, model: BaseChatModel):
     return None
 
 
-def _execute_task(
+async def _execute_task(
         task: Task,
         observations: Dict[int, ToolMessage],
         config,
@@ -142,8 +143,8 @@ def _execute_task(
             f' Args could not be resolved. Error: {repr(e)})']
     print(f'@@ [execute_task] resolved_args={type(resolved_args)}, {resolved_args}')
 
-    print(f'@@ [execute_task] execute: {type(tool)}.invoke({resolved_args}, config={config})')
-    response, error = _execute_with_retry(tool.invoke, resolved_args, config)
+    print(f'@@ [execute_task] execute: {type(tool)}.ainvoke({resolved_args}, config={config})')
+    response, error = await _execute_with_retry(tool.ainvoke, resolved_args, config)
     if error is not None:
         return [
             f'ERROR'
@@ -151,17 +152,17 @@ def _execute_task(
             f' Args resolved to {resolved_args}. Error: {repr(error)})']
     print(f'@@ [execute_task] tool_response={response}')
 
-    resolved_response = _resolve_response(resolved_args, response, model)
+    resolved_response = await _resolve_response(resolved_args, response, model)
     return [response] if resolved_response is None else [response, resolved_response]
 
 
 @as_runnable
-def _schedule_task(executor_input: ExecutorInput, config):
+async def _schedule_task(executor_input: ExecutorInput, config):
     task: Task = executor_input["task"]
     observations: Dict[int, ToolMessage] = executor_input["observations"]
     model: BaseChatModel = executor_input["model"]
     try:
-        outputs = _execute_task(task, observations, config, model)
+        outputs = await _execute_task(task, observations, config, model)
     except Exception as e:
         import traceback
         outputs = [traceback.format_exception(e)]
@@ -176,7 +177,7 @@ def _schedule_task(executor_input: ExecutorInput, config):
         tool_call_id=task["idx"])
 
 
-def _schedule_pending_task(
+async def _schedule_pending_task(
         task: Task,
         observations: Dict[int, ToolMessage],
         model: BaseChatModel,
@@ -186,16 +187,16 @@ def _schedule_pending_task(
         # Dependencies not yet satisfied
         dependencies = task["dependencies"]
         if dependencies and (any([d not in observations for d in dependencies])):
-            time.sleep(retry_delay_seconds)
+            await asyncio.sleep(retry_delay_seconds)
             continue
 
-        _schedule_task.invoke(
+        await _schedule_task.ainvoke(
             ExecutorInput(task=task, observations=observations, model=model))
         break
 
 
 @as_runnable
-def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
+async def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
     """Group the tasks into a DAG schedule."""
 
     # For streaming, we are making a few simplifying assumption:
@@ -217,30 +218,20 @@ def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
 
     # ^^ We assume each task inserts a different key above to
     # avoid race conditions...
-    futures = []
-    retry_delay_seconds = 0.25  # Retry every quarter second
-    with ThreadPoolExecutor() as executor:
-        for task in tasks:
-            _task_names[task["idx"]] = task["tool"] if isinstance(task["tool"], str) else task["tool"].name
-            _task_args[task["idx"]] = task["args"]
+    retry_after = 0.2
+    tasks = []
+    for task in scheduler_input["tasks"]:
+        deps = task["dependencies"]
+        _task_names[task["idx"]] = (
+            task["tool"] if isinstance(task["tool"], str) else task["tool"].name
+        )
+        _task_args[task["idx"]] = task["args"]
 
-            # Depends on other tasks
-            dependencies = task["dependencies"]
-            if dependencies and (any([d not in observations for d in dependencies])):
-                futures.append(executor.submit(
-                    _schedule_pending_task, task, observations, model, retry_delay_seconds))
-
-            # No dependencies or all dependencies satisfied, can schedule now
-            else:
-                _schedule_task.invoke(
-                    ExecutorInput(task=task, observations=observations, model=model))
-                # futures.append(executor.submit(
-                #     _schedule_task.invoke,
-                #     ExecutorInput(task=task, observations=observations, model=model)))
-
-        # All tasks have been submitted or enqueued
-        # Wait for them to complete
-        wait(futures)
+        if deps and any([dep not in observations for dep in deps]):
+            tasks.append(asyncio.create_task(_schedule_pending_task(task, observations, model, retry_after)))
+        else:
+            tasks.append(asyncio.create_task(_schedule_task.ainvoke(dict(task=task, observations=observations, model=model))))
+    await asyncio.gather(*tasks)
 
     # Convert observations to new tool messages to add to the state
     tool_messages = []
@@ -260,7 +251,7 @@ def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
 def build(planner: Runnable, model: BaseChatModel) -> Runnable:
 
     @as_runnable
-    def plan_and_execute(state):
+    async def plan_and_execute(state):
         for msg in state["messages"]:
             print(f'@@ [plan_and_execute] {msg.__class__.__name__}={msg}')
 
@@ -275,7 +266,7 @@ def build(planner: Runnable, model: BaseChatModel) -> Runnable:
         print(f'@@ [plan_and_execute] tasks={tasks}')
 
         # Execute tasks
-        executed_tasks = _schedule_tasks.invoke(
+        executed_tasks = await _schedule_tasks.ainvoke(
             SchedulerInput(messages=messages, tasks=tasks, model=model))
         print(f'@@ [plan_and_execute] executed_tasks={executed_tasks}')
 
