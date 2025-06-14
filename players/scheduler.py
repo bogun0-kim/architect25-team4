@@ -3,12 +3,10 @@
 ################################################################################
 
 import re
-import time
 import itertools
 import asyncio
 from typing import Any, Dict, Iterator, List, Union, Optional
 from typing_extensions import TypedDict
-from concurrent.futures import ThreadPoolExecutor, wait
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -206,7 +204,6 @@ async def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
     # adjust to do a proper topological sort (not-stream)
     # or use a more complicated data structure.
     messages = scheduler_input["messages"]
-    tasks = scheduler_input["tasks"]
     model = scheduler_input["model"]
     _task_names = {}
     _task_args = {}
@@ -236,13 +233,24 @@ async def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
     # Convert observations to new tool messages to add to the state
     tool_messages = []
     for idx in sorted(observations.keys() - original_keys):
-        tool_messages.append(AIMessage(
-            content='', additional_kwargs={
-                "tool_calls": [
-                    {"id": str(idx), "function": {"name": _task_names[idx], "arguments": str(_task_args[idx])}}
-                ]
-            }
-        ))
+        try:
+            msg = AIMessage(
+                content='',
+                additional_kwargs={
+                    "tool_calls": [{
+                        "id": str(idx),
+                        "function": {
+                            "name": _task_names[idx], "arguments": str(_task_args[idx])
+                        }
+                    }]
+                }
+            )
+        except Exception as e:
+            print('@@@@ERRORERRORERRORERRORERRORERRORERRORERRORERRORERROR')
+            print(e)
+            print('@@@@ERRORERRORERRORERRORERRORERRORERRORERRORERRORERROR')
+
+        tool_messages.append(msg)
         tool_messages.append(observations[idx])
 
     return tool_messages

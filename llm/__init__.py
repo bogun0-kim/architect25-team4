@@ -13,12 +13,16 @@ def _debug_inputs(func_name, config, input_, messages):
     print(f'\n@@@@@@@@@@@@@@@@@@@@ BaseChatModel.{func_name}() @@@@@@@@@@@@@@@@@@@@')
     print(f'@@ config: {config}')
     for n, msg in enumerate(messages, 1):
-        print(f'@@ ==================== input[{n}/{len(messages)}]-{msg.__class__.__name__} ========================================\n'
-              f'{msg.content}\n'
-              f'@@ --------------------------------------------------------------------------------\n'
-              f'@@ additional_kwargs={msg.additional_kwargs}\n'
-              f'@@ response_metadata={msg.response_metadata}\n'
-              f'@@ ================================================================================')
+        _log = [f'@@ ==================== input[{n}/{len(messages)}]-{msg.__class__.__name__} ========================================']
+        _log.append(msg.content)
+        if len(msg.additional_kwargs) > 0 or len(msg.response_metadata) > 0:
+            _log.append(f'@@ --------------------------------------------------------------------------------')
+            if len(msg.additional_kwargs) > 0:
+                _log.append(f'@@ additional_kwargs={msg.additional_kwargs}')
+            if len(msg.response_metadata) > 0:
+                _log.append(f'@@ response_metadata={msg.response_metadata}')
+        _log.append(f'@@ ================================================================================')
+        print('\n'.join(_log))
 
 
 def _debug(func_name, key, value):

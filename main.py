@@ -1,14 +1,12 @@
 import asyncio
 import time
-import logging
 from typing import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 import uvicorn
-import sys
 import uuid
 
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage, ToolMessage
 from managers.llm_manager import LLM
 from managers.tool_manager import ToolManager
 from managers.prompt_manager import PromptManager
@@ -83,13 +81,13 @@ ToolManager.set(agents.get_agent_client("mcp", {
 
 # Conductor build
 start_time = time.time()
-conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()))
+conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()), with_preplan=False)
 print(f'# Built conductor ({time.time() - start_time:.3f} seconds)')
 
 
 async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
+    user_message = user_message.strip()
     states = list(conductor.get_state_history(config))
-    messages = []
     user_request: str = None
     last_message: BaseMessage = None
 
@@ -114,6 +112,7 @@ async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
     start_time = time.time()
     print('\n########## START ##########\n')
     n_steps = 0
+    done = True
     yield '<< Processing >>'
     await asyncio.sleep(0.5)
     async for step in conductor.astream({
@@ -125,14 +124,23 @@ async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
         print(f'\n#### [STEP-{n_steps}-{step_name}] ####')
         if step_name == "__interrupt__":
             print(f'# [Interrupt] {step[step_name][0]}')
-            result = step[step_name][0].value
+            done = False
+            yield str(step[step_name][0].value.strip()).encode('utf-8')
         else:
-            result = step[step_name]["messages"]
-            for i, msg in enumerate(result):
+            messages = step[step_name]["messages"]
+            for i, msg in enumerate(messages):
                 print(f'# [message-{i}] {msg}')
-        yield str(result).encode('utf-8')
+                if not isinstance(msg, (AIMessage, ToolMessage)):
+                    continue
+                content = msg.content.replace('[HumanInTheLoop]', '').strip()
+                if content == '':
+                    continue
+                if content.replace('join', '').strip() == '':
+                    continue
+                yield str(content).encode('utf-8')
         await asyncio.sleep(0.5)
-    yield '<< Done >>'
+    if done:
+        yield '<< Done >>'
     print(f'\n########## DONE ({time.time() - start_time:.3f} seconds) ##########\n')
 
 
