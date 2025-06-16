@@ -19,10 +19,12 @@ Avoid rephrasing or interpreting the user's intent beyond what is written.
 Return only the list of task breakdowns and their brief descriptions.""".strip()
 
 
+
 _SIMPLE_PLAN_TEMPLATE = "<TASK_LIST>\n{}\n</TASK_LIST>"
 
 
 IS_PREPLAN = "is_preplan"
+
 
 
 class FormattedOutputParser(BaseOutputParser[AIMessage]):

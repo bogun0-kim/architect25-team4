@@ -61,7 +61,7 @@ ToolManager.set(agents.get_agent_client("mcp", {
 * Do not include multiple unrelated questions in a single input. The agent processes one task per request.
 * DO NOT guess the current date when the user does not specify a date.
 * If a `date` parameter is required but not provided, you MUST call calendar agent first to obtain the date. 
-""".strip().format(agent_name='weather_agent'),
+    """.strip().format(agent_name='weather_agent'),
     "mcp": {
         "transport": "streamable_http",
         "url": "http://localhost:8001/mcp",
@@ -159,11 +159,13 @@ async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
     n_steps = 0
     done = True
     yield '<< Processing >>'
+
     #await asyncio.sleep(0.5)
     async for step in conductor.astream({
         "user_request": user_request,
         "messages": messages,
     }, config=config):
+
         n_steps += 1
         step_name = list(step)[0]
         print(f'\n#### [STEP-{n_steps}-{step_name}] ####')

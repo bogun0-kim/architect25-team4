@@ -42,6 +42,7 @@ _hitl_plan: str = """
   - When referencing previous action outputs, you may refer to actions from the "Previous Plan", but make sure it is truly necessary before doing so.
 """.strip()
 
+
 # TODO: simple memory DB
 _default_key = "default"
 _DATA: dict[str, dict[str, ChatPromptTemplate | str]] = {
