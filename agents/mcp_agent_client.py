@@ -9,6 +9,7 @@ from langchain_core.tools import StructuredTool
 from langgraph.graph.graph import CompiledGraph
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
+from langchain_core.tools import tool
 
 def create_subagent_tool(
         mcp_agent: CompiledGraph,
@@ -96,22 +97,31 @@ def generate_tool_description(tool: StructuredTool) -> str:
     #    lines.append(" - (No input schema found)")
     return "\n".join(lines)
 
+@tool
+def request_user_input_tool(question: str) -> str:
+    """Request additional input from the user. This tool should be called when more information is needed from the user to complete the task."""
+    return f"[HumanInTheLoop] {question}"
 
 def generate_descriptions_for_tools(tools: List[BaseTool]) -> str:
     header = (
         "You are an agent equipped with a set of MCP tools. Use these tools to accurately fulfill user requests.\n\n"
-        "Each tool has a specific function signature, input requirements, and output format. Read them carefully before selecting and invoking a tool.\n\n"
-        "- Always choose the most relevant tool based on the task.\n"
-        "- Strictly follow the input type and parameter names as described.\n"
-        "- If `context` is provided, use it to improve the accuracy of your answer.\n"
-        "- Do not fabricate tool outputs. Only return what the tool provides.\n"
-        "- You MUST call this tool only once per type of weather data. For example, you cannot call `get_weather('Seoul', 'temperature, precipitation')`. "
-        "Instead, call `get_weather('Seoul', 'temperature')` and then `get_weather('Seoul', 'precipitation')` separately.\n"
-        "- Minimize the number of `get_weather` calls by grouping what you need logically. For example, if all values are needed, call them individually but only once per type.\n"
-        "- You can optionally provide a list of strings as `context` to clarify any ambiguity (e.g., time of day, elevation, past weather).\n"
-        "- This tool does NOT retain the output of previous calls. If chaining values (e.g., using temperature in math), you MUST explicitly pass prior outputs via `context`.\n"
-        "- You MUST NEVER treat `search`-type tool outputs as inputs for `get_weather`. If needed, extract values or use them in `context` only.\n"
-        "- Always specify the units you expect when asking about weather. For example, ask 'what is the temperature in Celsius' instead of just 'what is the temperature'.\n"
+        "Each tool has a defined function signature, specific input parameters, and a fixed output format. Read them carefully before selecting and invoking a tool.\n\n"
+        "General guidelines:\n"
+        "- Always choose the most appropriate tool based on the user's intent.\n"
+        "- Strictly follow the input type and parameter names as defined in the tool description.\n"
+        "- If `context` is provided, use it to improve your understanding or disambiguate the request.\n"
+        "- Do not fabricate or infer tool outputs. Only return what the tool actually provides.\n"
+        "- Avoid redundant tool calls. Call each tool only as needed and avoid repeating the same call with identical parameters.\n"
+        "- If chaining values across multiple tools (e.g., using the output of one tool in another), you MUST explicitly pass those values through parameters or context.\n"
+        "- Tool outputs are not retained implicitly. You must track and reuse them manually as needed.\n"
+        "- NEVER pass raw outputs from search-type or exploratory tools directly into other tools unless explicitly designed to do so. If needed, extract relevant information and use it in `context`.\n"
+        "- If any critical information is missing, or if there is ambiguity that requires user confirmation (e.g., multiple matches, unspecified targets), then:\n"
+        "  👉 You MUST use `request_user_input_tool` to explicitly ask the user for the required information or clarification.\n"
+        "- Always be precise in your requests. For example, instead of asking \"what is the value\", ask \"what is the temperature in Celsius\", or \"what is the email subject\".\n\n"
+        "Your objective is to:\n"
+        "- Execute tools accurately\n"
+        "- Minimize unnecessary calls\n"
+        "- Ensure the user remains in control when uncertainty arises\n"
     )
     tool_descriptions = [generate_tool_description(tool) for tool in tools]
     return header + "\n\n" + "============== Available Tool ==============\n" +"\n\n".join(tool_descriptions)
@@ -127,6 +137,8 @@ def get_agent_client(config: dict, llm: BaseChatModel, *args, **kwargs) -> BaseT
         },
     })
     tools = asyncio.run(client.get_tools())
+    tools.append(request_user_input_tool)
+
     desc = generate_descriptions_for_tools(tools)
     agent: CompiledGraph = create_react_agent(model=llm, tools=tools, prompt=desc)
     print(f'# agent: {name}')
