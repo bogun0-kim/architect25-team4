@@ -50,5 +50,5 @@ def prepare():
         print(f'LLM: {config["base_url"]}')
     LLM.set(get_llm_client(llm_type, config))
 
-    ToolManager.set(get_math_tool(LLM.get()))
+    # ToolManager.set(get_math_tool(LLM.get()))
     # ToolManager.set(get_search_tool())

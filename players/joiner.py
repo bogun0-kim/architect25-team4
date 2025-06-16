@@ -5,7 +5,7 @@
 from typing import Union
 from pydantic import BaseModel, Field
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 
@@ -61,6 +61,10 @@ def _select_recent_messages(state) -> dict:
             can_select = True
         if can_select:
             selected.append(msg)
+            #if isinstance(msg, HumanMessage):
+                #selected.append(msg)
+            #elif isinstance(msg, ToolMessage):
+                #selected.append(AIMessage(content=msg.content))
     return {"messages": selected}
 
 
