@@ -61,13 +61,13 @@ def build(
 
     # This condition determines looping logic
     def should_continue(state):
-        print("[should_continue] #########################################################")
         last_msg = state["messages"][-1]
-        print("type:", type(last_msg))
-        print("repr:", repr(last_msg))
-        print(last_msg)
-        print(last_msg.content)
-        print("[should_continue] #########################################################")
+        # print("[should_continue] #########################################################")
+        # print("type:", type(last_msg))
+        # print("repr:", repr(last_msg))
+        # print(last_msg)
+        # print(last_msg.content)
+        # print("[should_continue] #########################################################")
         if isinstance(last_msg, AIMessage):
             return END
         elif "[HumanInTheLoop]" in last_msg.content:
@@ -78,6 +78,7 @@ def build(
     # Next, we pass in the function that will determine which node is called next.
     graph.add_conditional_edges(joiner_node, should_continue)
     graph.add_edge(START, preplanner_node if with_preplan else planner_executor_node)
+    graph.add_edge(START, planner_executor_node)
     graph.add_edge(human_in_the_loop_node, joiner_node)
 
     return graph.compile(checkpointer=checkpointer)

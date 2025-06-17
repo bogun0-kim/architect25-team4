@@ -3,6 +3,10 @@ from langchain_core.runnables import chain as as_runnable
 from langchain_core.runnables.base import Runnable
 from langgraph.types import interrupt
 
+
+_DEBUG = False
+
+
 def build() -> Runnable:
 
     @as_runnable
@@ -10,7 +14,8 @@ def build() -> Runnable:
         """This node is called when the model needs human input."""
 
         answer = interrupt("Please provide missing information.")
-        print(f"> Received an input from the interrupt: {answer}")
+        if _DEBUG:
+            print(f"> Received an input from the interrupt: {answer}")
         return {
             "messages": state["messages"] + [HumanMessage(content=answer)]
         }

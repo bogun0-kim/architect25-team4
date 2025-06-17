@@ -180,43 +180,45 @@ async def _schedule_pending_task(
         observations: Dict[int, ToolMessage],
         model: BaseChatModel,
         retry_delay_seconds: float = 0.2,
+        max_wait_seconds_per_dependency: float = 3.0,
 ):
-    while True:
-        # Dependencies not yet satisfied
-        dependencies = task["dependencies"]
-        if dependencies and (any([d not in observations for d in dependencies])):
-            await asyncio.sleep(retry_delay_seconds)
-            continue
+    dependencies = task["dependencies"]
+    if dependencies:
+        max_wait_seconds = max_wait_seconds_per_dependency * len(dependencies)
+        waited_seconds = 0.0
+        while max_wait_seconds < 0.0 or waited_seconds < max_wait_seconds:
+            # Dependencies not yet satisfied
+            if any([d not in observations for d in dependencies]):
+                await asyncio.sleep(retry_delay_seconds)
+                waited_seconds += retry_delay_seconds
+                continue
 
-        await _schedule_task.ainvoke(
-            ExecutorInput(task=task, observations=observations, model=model))
-        break
+    await _schedule_task.ainvoke(
+        ExecutorInput(task=task, observations=observations, model=model))
+
+
+# 제한 병렬도 (최적값은 실험 필요, 일반적으로 5~10)
+MAX_PARALLEL = 5
+semaphore = asyncio.Semaphore(MAX_PARALLEL)
 
 
 @as_runnable
 async def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
-    """Group the tasks into a DAG schedule."""
-
-    # For streaming, we are making a few simplifying assumption:
-    # 1. The LLM does not create cyclic dependencies
-    # 2. That the LLM will not generate tasks with future deps
-    # If this ceases to be a good assumption, you can either
-    # adjust to do a proper topological sort (not-stream)
-    # or use a more complicated data structure.
     messages = scheduler_input["messages"]
     model = scheduler_input["model"]
     _task_names = {}
     _task_args = {}
 
-    # If we are re-planning, we may have calls that depend on previous
-    # plans. Start with those.
     observations = _get_observations(messages)
     original_keys = set(observations)
 
-    # ^^ We assume each task inserts a different key above to
-    # avoid race conditions...
     retry_after = 0.2
     tasks = []
+
+    async def schedule_with_semaphore(coro):
+        async with semaphore:
+            return await coro
+
     for task in scheduler_input["tasks"]:
         deps = task["dependencies"]
         _task_names[task["idx"]] = (
@@ -225,34 +227,27 @@ async def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
         _task_args[task["idx"]] = task["args"]
 
         if deps and any([dep not in observations for dep in deps]):
-            tasks.append(asyncio.create_task(_schedule_pending_task(task, observations, model, retry_after)))
+            print('??????????????????????????????????????????????????????????????')
+            task_coro = _schedule_pending_task(task, observations, model, retry_after)
         else:
-            tasks.append(asyncio.create_task(_schedule_task.ainvoke(dict(task=task, observations=observations, model=model))))
+            task_coro = _schedule_task.ainvoke(dict(task=task, observations=observations, model=model))
+
+        # 병렬 스케줄링
+        tasks.append(asyncio.create_task(schedule_with_semaphore(task_coro)))
+
     await asyncio.gather(*tasks)
 
-    # Convert observations to new tool messages to add to the state
+    # 결과 정리
     tool_messages = []
     for idx in sorted(observations.keys() - original_keys):
         try:
-            msg = AIMessage(
-                content='',
-                additional_kwargs={
-                    "tool_calls": [{
-                        "id": str(idx),
-                        "function": {
-                            "name": _task_names[idx], "arguments": str(_task_args[idx])
-                        }
-                    }]
-                }
-            )
-        except Exception as e:
-            print('@@@@ERRORERRORERRORERRORERRORERRORERRORERRORERRORERROR')
-            print(e)
-            print('@@@@ERRORERRORERRORERRORERRORERRORERRORERRORERRORERROR')
-
+            tool_call = {"id": str(idx), "function": {"name": _task_names[idx], "arguments": str(_task_args[idx])}}
+            msg = AIMessage(content='', additional_kwargs={"tool_calls": [tool_call]})
+        except Exception:
+            tool_call = {"id": str(idx), "function": {"name": _task_names[idx], "arguments": [str(_task_args[idx])]}}
+            msg = AIMessage(content='', additional_kwargs={"tool_calls": [tool_call]})
         tool_messages.append(msg)
         tool_messages.append(observations[idx])
-
     return tool_messages
 
 
