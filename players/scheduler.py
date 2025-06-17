@@ -71,12 +71,12 @@ def _resolve_arg(arg: Union[str, Any], observations: Dict[int, ToolMessage]):
     return arg
 
 
-def _execute_with_retry(func, *args, max_attempts: int = 3, retry_delay_seconds: float = 0.2, **kwargs):
+def _execute_with_retry(coroutine, *args, max_attempts: int = 3, retry_delay_seconds: float = 0.2, **kwargs):
     for attempt in range(1, max_attempts + 1):
         try:
-            return func(*args, **kwargs), None
+            return coroutine(*args, **kwargs), None
         except Exception as e:
-            print(f'# [{attempt}/{max_attempts}] Failed to call: {func} (Exception={e})')
+            print(f'# [{attempt}/{max_attempts}] Failed to call: {coroutine} (Exception={e})')
             if max_attempts <= attempt:
                 return None, e
             time.sleep(retry_delay_seconds)
@@ -181,44 +181,39 @@ def _schedule_pending_task(
         observations: Dict[int, ToolMessage],
         model: BaseChatModel,
         retry_delay_seconds: float = 0.2,
+        max_wait_seconds_per_dependency: float = 3.0,
 ):
-    while True:
-        # Dependencies not yet satisfied
-        dependencies = task["dependencies"]
-        if dependencies and (any([d not in observations for d in dependencies])):
-            time.sleep(retry_delay_seconds)
-            continue
+    dependencies = task["dependencies"]
+    if dependencies:
+        max_wait_seconds = max_wait_seconds_per_dependency * len(dependencies)
+        waited_seconds = 0.0
+        while max_wait_seconds < 0.0 or waited_seconds < max_wait_seconds:
+            # Dependencies not yet satisfied
+            if any([d not in observations for d in dependencies]):
+                time.sleep(retry_delay_seconds)
+                waited_seconds += retry_delay_seconds
+                continue
+            else:
+                break
 
-        _schedule_task.invoke(
-            ExecutorInput(task=task, observations=observations, model=model))
-        break
+    _schedule_task.invoke(
+        ExecutorInput(task=task, observations=observations, resolver=resolver))
 
 
 @as_runnable
 def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
-    """Group the tasks into a DAG schedule."""
-
-    # For streaming, we are making a few simplifying assumption:
-    # 1. The LLM does not create cyclic dependencies
-    # 2. That the LLM will not generate tasks with future deps
-    # If this ceases to be a good assumption, you can either
-    # adjust to do a proper topological sort (not-stream)
-    # or use a more complicated data structure.
     messages = scheduler_input["messages"]
     tasks = scheduler_input["tasks"]
     model = scheduler_input["model"]
     _task_names = {}
     _task_args = {}
 
-    # If we are re-planning, we may have calls that depend on previous
-    # plans. Start with those.
     observations = _get_observations(messages)
     original_keys = set(observations)
 
-    # ^^ We assume each task inserts a different key above to
-    # avoid race conditions...
+    retry_delay_seconds = 0.2
     futures = []
-    retry_delay_seconds = 0.25  # Retry every quarter second
+
     with ThreadPoolExecutor() as executor:
         for task in tasks:
             _task_names[task["idx"]] = task["tool"] if isinstance(task["tool"], str) else task["tool"].name
@@ -226,6 +221,7 @@ def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
 
             # Depends on other tasks
             dependencies = task["dependencies"]
+
             if dependencies and (any([d not in observations for d in dependencies])):
                 futures.append(executor.submit(
                     _schedule_pending_task, task, observations, model, retry_delay_seconds))
@@ -245,15 +241,14 @@ def _schedule_tasks(scheduler_input: SchedulerInput) -> List[ToolMessage]:
     # Convert observations to new tool messages to add to the state
     tool_messages = []
     for idx in sorted(observations.keys() - original_keys):
-        tool_messages.append(AIMessage(
-            content='', additional_kwargs={
-                "tool_calls": [
-                    {"id": str(idx), "function": {"name": _task_names[idx], "arguments": str(_task_args[idx])}}
-                ]
-            }
-        ))
+        try:
+            tool_call = {"id": str(idx), "function": {"name": _task_names[idx], "arguments": str(_task_args[idx])}}
+            msg = AIMessage(content='', additional_kwargs={"tool_calls": [tool_call]})
+        except Exception:
+            tool_call = {"id": str(idx), "function": {"name": _task_names[idx], "arguments": [str(_task_args[idx])]}}
+            msg = AIMessage(content='', additional_kwargs={"tool_calls": [tool_call]})
+        tool_messages.append(msg)
         tool_messages.append(observations[idx])
-
     return tool_messages
 
 

@@ -29,20 +29,21 @@ def _parse_llm_compiler_action_args(args: str, tool: Union[str, BaseTool]) -> Di
     if args is None or args == '' or isinstance(tool, str):
         return {}
 
+    tmp = str(args)
     extracted_args = {}
     tool_key = None
     prev_idx = None
     for key in tool.args.keys():
         # Split if present
-        if f"{key}=" in args:
-            idx = args.index(f"{key}=")
+        if f"{key}=" in tmp:
+            idx = tmp.index(f"{key}=")
             if prev_idx is not None:
-                extracted_args[tool_key] = _ast_parse(args[prev_idx:idx].strip().rstrip(","))
-            args = args.split(f"{key}=", 1)[1]
+                extracted_args[tool_key] = _ast_parse(tmp[prev_idx:idx].strip().rstrip(","))
+            tmp = tmp.split(f"{key}=", 1)[1]
             tool_key = key
             prev_idx = 0
     if prev_idx is not None:
-        extracted_args[tool_key] = _ast_parse(args[prev_idx:].strip().rstrip(",").rstrip(")"))
+        extracted_args[tool_key] = _ast_parse(tmp[prev_idx:].strip().rstrip(",").rstrip(")"))
 
     # Check required arguments
     is_valid = True
@@ -50,7 +51,7 @@ def _parse_llm_compiler_action_args(args: str, tool: Union[str, BaseTool]) -> Di
         if "default" not in meta and key not in extracted_args:
             is_valid = False
             break
-    return extracted_args if is_valid else args
+    return extracted_args if is_valid else _ast_parse(args)
 
 
 def default_dependency_rule(idx: int, args: str):
