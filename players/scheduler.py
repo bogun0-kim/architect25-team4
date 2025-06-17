@@ -192,6 +192,8 @@ async def _schedule_pending_task(
                 await asyncio.sleep(retry_delay_seconds)
                 waited_seconds += retry_delay_seconds
                 continue
+            else:
+                break
 
     await _schedule_task.ainvoke(
         ExecutorInput(task=task, observations=observations, model=model))

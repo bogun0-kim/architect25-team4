@@ -36,16 +36,16 @@ class JoinOutputs(BaseModel):
 
 
 def _parse_joiner_output(decision: JoinOutputs):  # -> List[BaseMessage]:
-    # print("#################JOINER OUTPUT#########################")
+    print("#################JOINER OUTPUT#########################")
     response = [AIMessage(content=f"Thought: {decision.thought}")]
     if isinstance(decision.action, Replan):
-        # print("################# REPLAN ###############")
+        print("################# REPLAN ###############")
         messages = response + [SystemMessage(content=f"[Replan] Context from last attempt: {decision.action.feedback}")]
     elif isinstance(decision.action, HumanInTheLoop):
-        # print("################# HUMAN IN THE LOOP ###############")
+        print("################# HUMAN IN THE LOOP ###############")
         messages = response + [SystemMessage(content=f"[HumanInTheLoop] Context from last attempt: {decision.action.question}")]
     else:
-        # print("################# FINAL RESPONSE ###############")
+        print("################# FINAL RESPONSE ###############")
         messages = response + [AIMessage(content=decision.action.response)]
     return {"messages": messages}
 
