@@ -1,0 +1,9 @@
+{
+  "api_type": "MCP",
+  "name": "contact_agent",
+  "description": "contact_agent(input=\"input message for contact_agent\", context=\"context for contact_agent\") -> str:\n* This is a unified interface to a multi-tool agent. It takes a natural language input, interprets the request, and uses internal MCP tools to execute the appropriate actions.\n* The agent is equipped with multiple tools (e.g., math, weather queries, etc.) and can autonomously choose the most suitable tool for the user's intent.\n* The `input` should be a plain English request describing what the user wants to know or compute.\n* The `context` field is optional and can include supplemental information from previous steps or system memory to improve accuracy.\n* The output is a final answer generated after the agent completes reasoning and tool execution.\n* You should not assume the agent knows everything; it only knows what its tools allow it to observe or compute.\n* Do not include multiple unrelated questions in a single input. The agent processes one task per request.",
+  "mcp": {
+    "transport": "streamable_http",
+    "url": "http://localhost:8006/mcp"
+  }
+}

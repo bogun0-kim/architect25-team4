@@ -1,0 +1,9 @@
+{
+  "api_type": "MCP",
+  "name": "calendar_agent",
+  "description": "calendar_agent(input=\"input message for calendar_agent\", context=\"context for calendar_agent\") -> str:\n* This is a unified interface to a multi-tool agent. It takes a natural language input, interprets the request, and uses internal MCP tools to execute the appropriate actions.\n* The agent is equipped with multiple tools and can autonomously choose the most suitable tool for the user's intent.\n* The `input` should be a plain English request describing what the user wants to know or compute.\n* The `context` field is optional and can include supplemental information from previous steps or system memory to improve accuracy.\n* The output is a final answer generated after the agent completes reasoning and tool execution.\n* You should not assume the agent knows everything; it only knows what its tools allow it to observe or compute.\n* Do not include multiple unrelated questions in a single input. The agent processes one task per request.\n* DO prioritize answering date-related questions such as \"What is today?\" or \"What day is it?\" using the `get_today_date` tool.\n* DO NOT attempt to compute or guess the date using reasoning alone. Always rely on the `get_today_date` tool for date-related answers.",
+  "mcp": {
+    "transport": "streamable_http",
+    "url": "http://localhost:8003/mcp"
+  }
+}

@@ -3,14 +3,12 @@ import asyncio
 import uuid
 import time
 import json
-
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage, ToolMessage
-from managers.llm_manager import LLM
-from managers.tool_manager import ToolManager
+from data_access import create_data_access
+from managers.llm_client_manager import LLMClientManager
+from managers.agent_client_manager import AgentClientManager
 from managers.prompt_manager import PromptManager
 from conductor import build
-from _demo import prepare
-import agents
 
 
 def collect_stream_sync(app, *arg, **kwargs):
@@ -28,9 +26,16 @@ def collect_stream_sync(app, *arg, **kwargs):
 
 
 def main(data_path, result_path):
-    prepare(agents)
-    conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()), with_preplan=False)
-    config = {"configurable": {"thread_id": uuid.uuid4()}}
+    create_data_access('./_demo/db')
+    LLMClientManager.refresh()
+    AgentClientManager.refresh(llm=LLMClientManager.get())
+    PromptManager.refresh()
+
+    conductor = build(
+        LLMClientManager.get(),
+        AgentClientManager.data(),
+        PromptManager.get(LLMClientManager.name()),
+        with_preplan=False)
 
     with open(data_path, 'r', encoding='utf8') as f:
         data = json.load(f)
@@ -49,6 +54,8 @@ def main(data_path, result_path):
         # if i in ____skip:
         #     print(f'[{i}] SKIP, TODO!!')
         #     continue
+
+        config = {"configurable": {"thread_id": uuid.uuid4()}}
 
         start_time = time.time()
         x = d["query"]
@@ -97,5 +104,5 @@ def accuracy(result_path):
 
 
 if __name__ == '__main__':
-    main('./_demo/data-eval-20250616.json', './result.txt')
+    main('_demo/eval/data-eval-20250616.json', './result.txt')
     accuracy('./result.txt')

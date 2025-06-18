@@ -1,0 +1,8 @@
+{
+  "api_type": "GOOGLE",
+  "api_key": "",
+  "model": "gpt-4.1-mini",
+  "base_url": "",
+  "max_tokens": 1024,
+  "temperature": 0.0
+}
