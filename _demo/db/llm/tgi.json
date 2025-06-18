@@ -1,8 +1,8 @@
 {
-  "api_type": "OPENAI",
+  "api_type": "TGI",
   "api_key": "",
   "model": "",
-  "base_url": "http://34.64.195.131:80/v1",
+  "base_url": "",
   "max_tokens": 1024,
   "temperature": 0.0
 }
