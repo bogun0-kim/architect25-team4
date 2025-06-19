@@ -5,7 +5,7 @@
 from typing import Union
 from pydantic import BaseModel, Field
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 
@@ -51,6 +51,10 @@ def _parse_joiner_output(decision: JoinOutputs):  # -> List[BaseMessage]:
 
 
 def _select_recent_messages(state) -> dict:
+    # TODO: for gemini
+    _merge_contents = True
+    merged_contents = []
+
     messages = state["messages"]
     selected = []
     can_select = False
@@ -60,6 +64,22 @@ def _select_recent_messages(state) -> dict:
         if isinstance(msg, HumanMessage):
             can_select = True
         if can_select:
+            if _merge_contents:
+                if isinstance(msg, AIMessage) and msg.content.strip() == '':
+                    func = msg.additional_kwargs.get("tool_calls", [{}])[0].get("function", {})
+                    func_name = func.get("name", None)
+                    if func_name is not None:
+                        func_args = func.get("arguments", '')
+                        new_content = f'Called Tool: {func_name}({func_args})'
+                        merged_contents.append(new_content)
+                elif isinstance(msg, ToolMessage) and msg.content.strip() != '':
+                    new_content = f'Tool Result: {msg.content.strip()}\n'
+                    merged_contents.append(new_content)
+                    selected.append(AIMessage('\n'.join(merged_contents)))
+                    merged_contents = []
+                else:
+                    selected.append(msg)
+                continue
             selected.append(msg)
     return {"messages": selected}
 

@@ -1,3 +1,4 @@
+import threading
 import time
 import uuid
 from typing import AsyncGenerator
@@ -12,31 +13,24 @@ from managers.prompt_manager import PromptManager
 from conductor import build
 
 
-create_data_access('./_demo/db')
-LLMClientManager.refresh()
-AgentClientManager.refresh(llm=LLMClientManager.get())
-PromptManager.refresh()
-
-
 # TODO : make thread_id logic by user_id
-config = {
-    "configurable": {
-        "thread_id": uuid.uuid4(),
-    }
-}
-
-# Conductor build
-start_time = time.time()
-conductor = build(
-    LLMClientManager.get(),
-    AgentClientManager.data(),
-    PromptManager.get(LLMClientManager.name()),
-    with_preplan=False)
-print(f'# Built conductor ({time.time() - start_time:.3f} seconds)')
+# config = {"configurable": {"thread_id": uuid.uuid4()}}
 
 
 async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
+    config = {"configurable": {"thread_id": uuid.uuid4()}}
+
+    start_time = time.time()
+    conductor = build(
+        LLMClientManager.get(),
+        AgentClientManager.data(),
+        PromptManager.get(LLMClientManager.name()),
+        with_preplan=False)
+    print(f'# Built Conductor ({time.time() - start_time:.3f} seconds)')
+
     user_message = user_message.strip()
+    print(f'[Backend] User Request: {user_message}')
+    print(f'[Backend] Current LLM: {LLMClientManager.get("api_type")}, {LLMClientManager.name()}')
     states = list(conductor.get_state_history(config))
     user_request: str = None
     last_message: BaseMessage = None
@@ -62,6 +56,7 @@ async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
     start_time = time.time()
     print('\n########## START ##########\n')
     n_steps = 0
+    final_answer = None
     done = True
     yield '<< Processing >>'
     # await asyncio.sleep(0.5)
@@ -79,7 +74,7 @@ async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
         else:
             messages = step[step_name]["messages"]
             for i, msg in enumerate(messages):
-                print(f'# [message-{i}] {msg}')
+                print(f'# [message-{i}] {type(msg)} {msg}')
                 if not isinstance(msg, (AIMessage, ToolMessage)):
                     continue
                 content = msg.content.replace('[HumanInTheLoop]', '').strip()
@@ -87,14 +82,47 @@ async def generate_response(user_message: str) -> AsyncGenerator[bytes, None]:
                     continue
                 if content.replace('join', '').strip() == '':
                     continue
+                final_answer = content
                 yield str(content).encode('utf-8')
         # await asyncio.sleep(0.5)
     if done:
         yield '<< Done >>'
+    print(f'[Backend] Final Response: {final_answer}')
     print(f'\n########## DONE ({time.time() - start_time:.3f} seconds) ##########\n')
 
 
+def update_llm_and_agents():
+    connected_llm = LLMClientManager.refresh()
+    if connected_llm:
+        print(f'[Backend] Connected LLM: {LLMClientManager.get("api_type")}, {LLMClientManager.name()}')
+    connected_agents, disconnected_agents = AgentClientManager.refresh(force=connected_llm, llm=LLMClientManager.get())
+    for connected_agent in connected_agents:
+        print(f'[Backend] Connected Agent: {connected_agent["api_type"]}, {connected_agent["name"]}')
+    for disconnected_agent in disconnected_agents:
+        print(f'[Backend] Disconnected Agent: {disconnected_agent}')
+
+
 app = FastAPI()
+_stop_event = threading.Event()
+create_data_access('./_demo/db')
+PromptManager.refresh()
+
+
+def background_loop(interval_seconds: float, stop_event: threading.Event):
+    while not stop_event.is_set():
+        update_llm_and_agents()
+        time.sleep(interval_seconds)
+
+
+@app.on_event("startup")
+def start_loop():
+    thread = threading.Thread(target=background_loop, args=(5, _stop_event), daemon=True)
+    thread.start()
+
+
+@app.on_event("shutdown")
+def stop_loop():
+    _stop_event.set()
 
 
 @app.post('/test')

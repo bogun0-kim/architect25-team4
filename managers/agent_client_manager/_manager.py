@@ -1,22 +1,22 @@
 from data_access import *
-from ..llm_client_manager import *
 from .client import *
 
 
-# Singleton instances
 _CLIENTS: dict[str, AgentClient] = {}
 
 
 class AgentClientManager:
     @staticmethod
-    def set(client: AgentClient | dict, **kwargs):
+    def set(client: AgentClient | dict, force: bool = False, **kwargs) -> bool:
         global _CLIENTS
         if isinstance(client, dict):
-            print(f'# Agent configuration: {client}')
+            if not force and client["name"] in _CLIENTS:
+                return False
             api_type: str = client.pop("api_type")
             creator_class = get_creator(api_type)
             client = creator_class().get_instance(client, **kwargs)
         _CLIENTS[client.name] = client
+        return True
 
     @staticmethod
     def get(client: AgentClient | str, default=None) -> AgentClient | None:
@@ -29,20 +29,23 @@ class AgentClientManager:
         return _CLIENTS.pop(client.name if isinstance(client, AgentClient) else str(client), None)
 
     @staticmethod
-    def list() -> list[AgentClient]:
-        global _CLIENTS
-        return list(_CLIENTS.values())
-
-    @staticmethod
     def data() -> dict[str, AgentClient]:
         global _CLIENTS
         return dict(_CLIENTS)
 
     @staticmethod
-    def refresh(**kwargs):
+    def refresh(force: bool = False, **kwargs) -> tuple[list[dict], list[str]]:
+        global _CLIENTS
         configs = get_data_access().get("agent")
+        disconnected = []
+        for k, v in _CLIENTS.items():
+            if sum([1 if k == config["name"] else 0 for config in configs]) == 0:
+                disconnected.append(k)
+        connected = []
         for config in configs:
-            AgentClientManager.set(config, **kwargs)
+            if AgentClientManager.set(dict(config), force, **kwargs):
+                connected.append(config)
+        return connected, disconnected
 
 
 __all__ = [
