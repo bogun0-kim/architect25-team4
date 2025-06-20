@@ -30,7 +30,6 @@ def collect_stream_sync(app, *arg, **kwargs):
 def main(data_path, result_path):
     prepare(agents)
     conductor = build(LLM.get(), ToolManager.data(), PromptManager.get(LLM.name()), with_preplan=False)
-    config = {"configurable": {"thread_id": uuid.uuid4()}}
 
     with open(data_path, 'r', encoding='utf8') as f:
         data = json.load(f)
@@ -56,6 +55,7 @@ def main(data_path, result_path):
         print(f'[{i}] query="{x}", ground-truth={y_true}')
 
         try:
+            config = {"configurable": {"thread_id": uuid.uuid4()}}
             outputs = collect_stream_sync(
                 conductor,
                 {"user_request": x, "messages": [HumanMessage(content=x)]},
@@ -73,11 +73,16 @@ def main(data_path, result_path):
                 tool_name = msg.additional_kwargs.get("tool_calls", [{}])[0].get("function", {}).get("name", None)
                 if tool_name is not None and tool_name != 'join':
                     y_pred.append(tool_name)
+                if step_name == "join":
+                    with open(result_path, 'a', encoding='utf8') as f:
+                        f.write(f'{msg.content}\n')
+            
         y_pred = sorted(list(set(y_pred)))
 
         log = f'[{i}] {y_true == y_pred}, GT={y_true}, PD={y_pred}, Query="{x}" ({time.time() - start_time:.3f}s)'
         with open(result_path, 'a', encoding='utf8') as f:
             f.write(f'{log}\n')
+            f.write(f'###############################################\n')
         print(log)
         time.sleep(1.0)
 
@@ -93,9 +98,11 @@ def accuracy(result_path):
         correct = correct.replace(',', '').strip() == 'True'
         corrects.append(1 if correct else 0)
     acc = sum(corrects) / len(corrects) * 100.0
-    print(f'# Accuracy: {acc:.2f} % ({sum(corrects)} / {len(corrects)})')
+    acc_log = f'# Accuracy: {acc:.2f} % ({sum(corrects)} / {len(corrects)})'
+    with open(result_path, 'a', encoding='utf8') as f:
+        f.write(f'{acc_log}\n')
 
 
 if __name__ == '__main__':
-    main('./_demo/data-eval-20250616.json', './result.txt')
-    accuracy('./result.txt')
+    main('./_demo/data-eval-20250616.json', './result-250619-3.txt')
+    accuracy('./result-250619-3.txt')
